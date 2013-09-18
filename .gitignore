@@ -1,0 +1,9 @@
+gmon.out
+a.out
+*.0
+*.so
+*.pyc
+*.o
+*.ut
+*.a
+*~
