@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include "type.h"
+//define the dataline
 struct lineheader0
 {
   u16 l1fld;   //L 1(num) F L D 
