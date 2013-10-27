@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-09-22 21:03:00 macan>
+ * Time-stamp: <2013-10-27 08:56:24 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -90,6 +90,34 @@ union struct_t
 {
     u8 nr; /* record the # of L1 fields */
     u8 data[0];
+};
+
+struct field
+{
+    char *name;
+    u16 id;
+    u16 pid;                    /* INVALID: -1 */
+    u8 type;
+    u8 codec;
+    int cidnr;                  /* # of child fields */
+};
+
+struct field_2pack
+{
+    u8 type;
+    int cidnr;                  /* # of appended child fields */
+    void *data;
+};
+
+/* for storage use */
+struct field_d 
+{
+    u16 id;
+    u16 pid;
+    u8 type;
+    u8 codec;
+    u8 namelen;
+    char name[0];
 };
 
 #endif

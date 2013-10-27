@@ -1,36 +1,26 @@
-#include "page.h"
-#include "stdlib.h"
+/**
+ * Copyright (c) 2009 Ma Can <ml.macana@gmail.com>
+ *                           <macan@ncic.ac.cn>
+ *
+ * Armed with EMACS.
+ * Time-stamp: <2013-10-27 20:29:46 macan>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ */
 
-int init_pg_pool()
-{
-  PG_POOL = malloc(SU_PG_POOL_SIZE*sizeof(struct page));
-  if(!PG_POOL){
-    perror("can't init page pool");
-    //return -1;
-    exit(EXIT_FAILURE);
-  }
-  return 0;
-}
-struct page *build_page(void)
-{
-  struct page *p = malloc(sizeof(struct page));
-  if(!p){
-    perror("can't build page");
-    exit(EXIT_FAILURE);
-  }
-  PG_CURERNT = p;
-  return p;
-}
-struct page *get_cp()
-{
-  if(PG_CURERNT)return PG_CURERNT;
-  else PG_CURERNT = build_page();
-}
-int main(void)
-{
-  struct page *page;
-  page = malloc(sizeof(struct page));
-  PG_CURERNT = page;
-  if(!page)perror("malloc");
-  return 0;
-}
+#include "gingko.h"
+
+

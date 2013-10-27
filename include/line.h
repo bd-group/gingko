@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 20:36:50 macan>
+ * Time-stamp: <2013-10-27 08:47:40 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,38 @@
  *
  */
 
-#include "gingko.h"
+#ifndef __LINE_H__
+#define __LINE_H__
 
+struct lineheader0
+{
+    u16 l1fld;   //L 1(num) F L D 
+    u16 len;
+    u32 llen;    // LLen
+};
 
+struct lineheader
+{
+    u16 l1fld;
+    u16 pad;
+    u32 offset;  //offset in current page
+};
+
+struct line
+{
+    struct lineheader *lh;  //line header
+    void *ld;               //line data
+    int len;
+};
+
+extern struct lineheader lharray[]; //total 1 + lharray[0].len
+
+struct column 
+{
+    u16 fld;                    /* field ID */
+    u16 flag;                   /* which light-weight codec */
+    void *codec;                /* refer to light-weight codec */
+    void *fldstat;              /* refer to field statistic area */
+};
+
+#endif

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 20:36:50 macan>
+ * Time-stamp: <2013-10-27 20:14:28 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,46 @@
  *
  */
 
-#include "gingko.h"
+#ifndef __SU_H__
+#define __SU_H__
 
+#include "dfile.h"
 
+struct su_meta_d
+{
+    u8 version;
+#define GSU_META_RDONLY         0x01
+#define GSU_META_BAD            0x02
+    u8 flags;
+    u16 namelen;
+    int dfnr;
+    char name[0];
+};
+
+struct su_meta
+{
+    u8 version;
+#define GSU_META_RDONLY         0x01
+#define GSU_META_
+    u8 flags;
+    int dfnr;
+    char *name;
+};
+
+struct gingko_su
+{
+#define GSU_FREE        0       /* can use for allocate */
+#define GSU_INIT        1       /* inited but not open */
+#define GSU_OPEN        2       /* openned for use */
+#define GSU_CLOSE       3       /* closed and cached */
+    int state;
+
+    struct dfile *files;
+    struct su_meta sm;
+};
+
+/* flags for alloc SU (__alloc_su) */
+#define GSU_ALLOC_FREE_ONLY     0
+#define GSU_ALLOC_HARD          1
+
+#endif
