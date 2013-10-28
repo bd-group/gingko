@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-09-22 20:52:17 macan>
+ * Time-stamp: <2013-10-27 20:40:27 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,6 +34,11 @@
 #include "xhash.h"
 
 #include "field.h"
+#include "line.h"
+#include "index.h"
+#include "page.h"
+#include "dfile.h"
+#include "su.h"
 
 /* APIs */
 #include "hash.c"
@@ -45,5 +50,84 @@
 #define BITMAP_ROUNDDOWN(x) ((x) & (~((XTABLE_BITMAP_SIZE) - 1)))
 
 #define PAGE_ROUNDUP(x, p) ((((size_t) (x)) + (p) - 1) & ~((p) - 1))
+
+/* export APIs */
+
+#define SU_OPEN_RDONLY          0
+#define SU_OPEN_APPEND          1
+
+/* Open a SU, return SUID */
+int su_open(char *supath, int mode);
+
+/* Get schema info from SU, should open SU firstly */
+struct field *su_getschema(int suid);
+
+/* Create a SU */
+int su_create(char *supath, struct field schemas[], int schlen);
+
+/* Write a line to SU */
+int su_write(int suid, struct line* line, long lid);
+
+/* Sync the memroy cached SU content to disk */
+int su_sync(int suid);
+
+/* Close the SU */
+int su_close(int suid);
+
+/* Read interfaces for Gingko */
+
+struct range
+{
+    long begin, end;
+};
+
+struct op
+{
+    struct op *left, *right;
+    u16 fld;
+    void *args;
+};
+
+union ops
+{
+    struct op op;
+    /* ... */
+};
+
+struct optree
+{
+    union ops *root;
+};
+
+int su_scan(char *supath, struct range *r, struct optree *opt);
+
+int su_get(char *supath, long lid, char *fields[]);
+
+int su_mget(char *supath, long lids[], char *fields[]);
+
+/* Index exploiting */
+
+struct sustat
+{
+    long lnr;                   /* line number */
+};
+
+int su_statsu(char *supath, struct sustat *r);
+
+struct dfstat
+{
+    long pnr;                   /* page number */
+};
+
+int su_statdf(char *supath, int dfid, struct dfstat *r);
+
+struct pgstat
+{
+    long lnr;                   /* line number in this page */
+    int fldnr;                  /* number of fields */
+    void *idx;                  /* index array */
+};
+
+int su_statpg(char *supath, int dfid, int pgid, struct pgstat *r);
 
 #endif

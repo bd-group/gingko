@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 20:36:50 macan>
+ * Time-stamp: <2013-10-27 08:46:19 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,28 @@
  *
  */
 
-#include "gingko.h"
+#ifndef __PAGE_H__
+#define __PAGE_H__
 
+#include "index.h"
 
+struct pageheader 
+{
+#define SU_PH_COMP_NONE         0
+#define SU_PH_COMP_SNAPPY       1
+#define SU_PH_COMP_LZO          2
+#define SU_PH_COMP_ZLIB         3
+    u32 flag;
+    u32 orig_len;
+    u32 zip_len;
+    u32 crc32;
+};
+
+struct page 
+{
+    struct pageheader ph;
+    struct pageindex *pi;
+    void *data;
+};
+
+#endif

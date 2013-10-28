@@ -2,7 +2,7 @@
 # Copyright (c) 2009 Ma Can <ml.macana@gmail.com>
 #                           <macan@ncic.ac.cn>
 #
-# Time-stamp: <2013-09-22 20:53:05 macan>
+# Time-stamp: <2013-10-27 20:34:49 macan>
 #
 # This is the makefile for GINGKO project.
 #
@@ -77,7 +77,7 @@ API_AR_SOURCE = api.c
 
 INC_H_SOURCE = atomic.h err.h gingko.h gingko_common.h gingko_const.h \
 				gingko_u.h memory.h tracing.h xhash.h xlist.h xlock.h \
-				field.h
+				field.h su.h dfile.h page.h line.h index.h
 SU_H_SOURCE = 
 INDEX_H_SOURCE = 
 LIB_H_SOURCE = lib.h minilzo.h
