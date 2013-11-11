@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 21:30:38 macan>
+ * Time-stamp: <2013-11-11 17:15:38 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,14 +24,8 @@
 #include "gingko.h"
 
 #ifdef GINGKO_TRACING
-static u32 gingko_api_tracing_flags;
+u32 gingko_api_tracing_flags;
 #endif
-
-#define GINGKO_MAX_SUID         102400
-struct gingko_conf
-{
-    int max_suid;
-};
 
 static struct gingko_conf g_conf = {
     .max_suid = GINGKO_MAX_SUID,
@@ -55,7 +49,6 @@ static struct gingko_manager g_mgr = {
 
 int gingko_init(struct gingko_conf *conf)
 {
-    struct gingko_su *su;
     int err = 0;
 
     if (conf == NULL)
@@ -63,8 +56,8 @@ int gingko_init(struct gingko_conf *conf)
 
     g_mgr.gc = conf;
 
-    su = xzalloc(sizeof(*su) * conf->max_suid);
-    if (!su) {
+    g_mgr.gsu = xzalloc(sizeof(*g_mgr.gsu) * conf->max_suid);
+    if (!g_mgr.gsu) {
         gingko_err(api, "xzalloc(%d * gingko_su) failed", conf->max_suid);
         err = -ENOMEM;
         goto out;
@@ -72,6 +65,15 @@ int gingko_init(struct gingko_conf *conf)
     xlock_init(&g_mgr.gsu_lock);
     
 out:
+    return err;
+}
+
+int gingko_fina(void)
+{
+    int err = 0;
+    
+    /* free all resources */
+
     return err;
 }
 
@@ -118,7 +120,9 @@ void __free_su(struct gingko_su *gs)
         return;
 
     /* TODO:free any resource, then set GSU_FREE flag */
-    xfree(gs->sm.name);
+    xfree(gs->path);
+    xfree(gs->files);
+    /*xfree(gs->sm.name);*/
 
     gs->state = GSU_FREE;
 }
@@ -128,10 +132,10 @@ void __free_su(struct gingko_su *gs)
  */
 int su_open(char *supath, int mode) 
 {
-    char path[4096];
     struct gingko_su *gs = NULL;
+    struct df_header *dfh;
     struct stat st;
-    int suid, err = 0, fd;
+    int suid, err = 0, i;
 
     /* Step 1: find and allocate the gingko_su */
     gs = __alloc_su(&g_mgr, GSU_ALLOC_FREE_ONLY);
@@ -159,60 +163,10 @@ int su_open(char *supath, int mode)
     }
 
     /* Step 3: read the su.meta file */
-    sprintf(path, "%s/su.meta", supath);
-    fd = open(path, O_RDONLY);
-    if (fd < 0) {
-        gingko_err(api, "open(%s) failed w/ %s(%d)\n",
-                   path, strerror(errno), errno);
-        err = -errno;
+    gs->path = strdup(supath);
+    err = su_read_meta(gs);
+    if (err) {
         goto out_free;
-    }
-
-    {
-        struct su_meta_d smd;
-        int br, bl = 0;
-
-        do {
-            br = read(fd, (void *)&smd + bl, sizeof(smd) - bl);
-            if (br < 0) {
-                gingko_err(api, "read %s failed w/ %s(%d)\n",
-                           path, strerror(errno), errno);
-                err = -errno;
-                goto out_free;
-            }
-            bl += br;
-        } while (bl < sizeof(smd));
-        
-        gs->sm.version = smd.version;
-        gs->sm.flags = smd.flags;
-        gs->sm.dfnr = smd.dfnr;
-
-        if (smd.namelen > 0) {
-            gs->sm.name = xzalloc(smd.namelen + 1);
-            if (!gs->sm.name) {
-                gingko_err(api, "xzalloc name failed.\n");
-                err = -ENOMEM;
-                goto out_free;
-            }
-            
-            bl = 0;
-            do {
-                br = read(fd, gs->sm.name + bl, smd.namelen - bl);
-                if (br < 0) {
-                    gingko_err(api, "read %s name failed w/ %s(%d)\n",
-                               path, strerror(errno), errno);
-                    err = -errno;
-                    goto out_free;
-                }
-                bl += br;
-            } while (bl < smd.namelen);
-        }
-        
-        gingko_debug(api, "Read su.meta (v %d, 0x%x, dfnr %d, %s)\n",
-                     gs->sm.version,
-                     gs->sm.flags,
-                     gs->sm.dfnr,
-                     gs->sm.name);
     }
     
     switch (mode) {
@@ -233,6 +187,30 @@ int su_open(char *supath, int mode)
         break;
     }
 
+    /* Step 4: read the dfiles */
+    gs->files = xzalloc(sizeof(struct dfile) * gs->sm.dfnr);
+    if (!gs->files) {
+        gingko_err(api, "xzalloc DFILEs failed\n");
+        err = -ENOMEM;
+        goto out_free;
+    }
+    
+    for (i = 0; i < gs->sm.dfnr; i++) {
+        dfh = xzalloc(sizeof(*dfh));
+        if (!dfh) {
+            gingko_err(api, "xzalloc DFH failed\n");
+            err = -ENOMEM;
+            goto out_free;
+        }
+        err = df_read_meta(gs, dfh);
+        if (err) {
+            gingko_err(api, "df_read_meta failed w/ %s(%d)\n",
+                       strerror(-err), err);
+            goto out_free;
+        }
+        gs->files[i].dfh = dfh;
+    }
+
     /* ok, we have build the GS, return the suid now */
     err = suid;
     
@@ -240,6 +218,11 @@ out:
     return err;
 
 out_free:
+    if (gs->files) {
+        for (i = 0; i < gs->sm.dfnr; i++) {
+            xfree(gs->files[i].dfh);
+        }
+    }
     __free_su(gs);
     return err;
 }
@@ -252,8 +235,121 @@ struct field *su_getschema(int suid)
 }
 
 /* Create a SU
+ *
+ * Args: parent(supath) should exist, and supath should not exist
  */
 int su_create(char *supath, struct field schemas[], int schelen)
+{
+    struct stat st;
+    struct gingko_su *gs;
+    int err = 0, suid, i;
+
+    err = stat(supath, &st);
+    if (err) {
+        if (errno == ENOENT) {
+            /* it is ok to create it */
+            err = mkdir(supath, 0775);
+            if (err) {
+                gingko_err(api, "mdir(%s) failed w/ %s(%d)\n",
+                           supath, strerror(errno), errno);
+                err = -errno;
+                goto out;
+            }
+        } else {
+            gingko_err(api, "stat(%s) failed w/ %s(%d)\n",
+                       supath, strerror(errno), errno);
+            err = -errno;
+            goto out;
+        }
+    } else {
+        /* there exists a SU in supath */
+        gingko_err(api, "SU exists in your path '%s', remove it if you "
+                   "truely want to create at there.\n", supath);
+        err = -EEXIST;
+        goto out;
+    }
+
+    gs = __alloc_su(&g_mgr, GSU_ALLOC_FREE_ONLY);
+    if (!gs) {
+        gingko_err(api, "allocate SU (FREE_ONLY) faield, no memory.\n");
+        err = -ENOMEM;
+        goto out;
+    }
+    gs->path = strdup(supath);
+    if (!gs->path) {
+        gingko_err(api, "allocate supath failed, no memory.\n");
+        err = -ENOMEM;
+        goto out;
+    }
+    suid = __calc_suid(&g_mgr, gs);
+    gingko_debug(api, "Allocate SU %p idx %d\n", gs, suid);
+    
+    /* Step 1: write the su.meta */
+    gs->sm.version = SU_META_VERSION;
+    gs->sm.flags = GSU_META_RW;
+    gs->sm.dfnr = 1;
+    gs->sm.name = "default_su";
+    
+    err = su_write_meta(gs);
+    if (err) {
+        gingko_err(api, "su_write_meta() failed w/ %s(%d)\n",
+                   strerror(errno), errno);
+        goto out_free;
+    }
+
+    /* Step 2: parse field schema to generate a schema tree */
+    err = verify_schema(schemas, schelen);
+    if (err) {
+        gingko_err(api, "verify_schema() failed w/ %s(%d)\n",
+                   strerror(errno), errno);
+        goto out_free;
+    }
+
+    /* Step 3: new a dfile */
+    gs->files = xzalloc(sizeof(struct dfile) * gs->sm.dfnr);
+    if (!gs->files) {
+        gingko_err(api, "xzalloc() dfile failed, no memory.\n");
+        err = -ENOMEM;
+        goto out_free;
+    }
+
+    for (i = 0; i < gs->sm.dfnr; i++) {
+        err = init_dfile(gs, schemas, schelen, gs->files + i);
+        if (err) {
+            gingko_err(api, "init_dfile() failed w/ %s(%d)\n",
+                       strerror(-err), err);
+            goto out_free;
+        }
+    }
+    
+out:
+    return err;
+out_free:
+    __free_su(gs);
+    return err;
+}
+
+/* Write a line to SU
+ */
+int su_write(int suid, struct line *line, long lid)
+{
+    int err = 0;
+    
+    return err;
+}
+
+/* Sync the memroy cached SU content to disk
+ */
+int su_sync(int suid)
+{
+    int err = 0;
+    
+    return err;
+}
+
+/* Close the SU
+ */
+int su_close(int suid)
 {
     int err = 0;
 

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 20:14:28 macan>
+ * Time-stamp: <2013-11-11 16:50:42 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,9 +28,11 @@
 
 struct su_meta_d
 {
+#define SU_META_VERSION         0x01
     u8 version;
 #define GSU_META_RDONLY         0x01
-#define GSU_META_BAD            0x02
+#define GSU_META_RW             0x02
+#define GSU_META_BAD            0x80
     u8 flags;
     u16 namelen;
     int dfnr;
@@ -40,8 +42,6 @@ struct su_meta_d
 struct su_meta
 {
     u8 version;
-#define GSU_META_RDONLY         0x01
-#define GSU_META_
     u8 flags;
     int dfnr;
     char *name;
@@ -55,6 +55,7 @@ struct gingko_su
 #define GSU_CLOSE       3       /* closed and cached */
     int state;
 
+    char *path;
     struct dfile *files;
     struct su_meta sm;
 };
@@ -62,5 +63,9 @@ struct gingko_su
 /* flags for alloc SU (__alloc_su) */
 #define GSU_ALLOC_FREE_ONLY     0
 #define GSU_ALLOC_HARD          1
+
+#ifdef GINGKO_TRACING
+extern u32 gingko_su_tracing_flags;
+#endif
 
 #endif

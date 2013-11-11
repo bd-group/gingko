@@ -2,7 +2,7 @@
 # Copyright (c) 2009 Ma Can <ml.macana@gmail.com>
 #                           <macan@ncic.ac.cn>
 #
-# Time-stamp: <2013-10-27 20:34:49 macan>
+# Time-stamp: <2013-11-11 15:36:16 macan>
 #
 # This is the makefile for GINGKO project.
 #
@@ -22,6 +22,7 @@ API = $(HOME_PATH)/api
 INDEX = $(HOME_PATH)/index
 SU = $(HOME_PATH)/su
 CODEC = $(HOME_PATH)/codec
+TEST = $(HOME_PATH)/test
 
 ifdef USE_GIT_TAG
 GIT_SHA = `$(GIT) rev-parse HEAD`
@@ -70,14 +71,16 @@ LFLAGS += -lrt -ldl -lpthread
 
 # Region for depend files
 LIB_AR_SOURCE = lib.c crc32.c md5.c minilzo.c segv.c time.c
-SU_AR_SOURCE = su.c dfile.c page.c pagecache.c line.c column.c
+SU_AR_SOURCE = su.c dfile.c page.c pagecache.c line.c column.c field.c
 INDEX_AR_SOURCE = dfile.c page.c 
 CODEC_AR_SOURCE = dict.c delta.c runlen.c
 API_AR_SOURCE = api.c
 
+TEST_BUILD_SOURCE = gingko.c
+
 INC_H_SOURCE = atomic.h err.h gingko.h gingko_common.h gingko_const.h \
 				gingko_u.h memory.h tracing.h xhash.h xlist.h xlock.h \
-				field.h su.h dfile.h page.h line.h index.h
+				field.h su.h dfile.h page.h line.h index.h iapi.h
 SU_H_SOURCE = 
 INDEX_H_SOURCE = 
 LIB_H_SOURCE = lib.h minilzo.h

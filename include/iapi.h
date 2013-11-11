@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-04 20:37:26 macan>
+ * Time-stamp: <2013-11-11 15:00:22 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,15 +21,18 @@
  *
  */
 
-#include "gingko.h"
+#ifndef __IAPI_H__
+#define __IAPI_H__
 
-int verify_schema(struct field schemas[], int schelen)
-{
-    int err = 0, i;
+/* APIs */
+int df_read_meta(struct gingko_su *gs, struct df_header *dfh);
+int df_write_meta(struct gingko_su *gs, struct df_header *dfh);
 
-    for (i = 0; i < schelen; i++) {
-        /* construct a schema tree and verify it */
-    }
-    
-    return err;
-}
+int su_read_meta(struct gingko_su *gs);
+int su_write_meta(struct gingko_su *gs);
+
+int verify_schema(struct field schemas[], int schelen);
+int init_dfile(struct gingko_su *gs, struct field schemas[], int schelen, 
+               struct dfile *df);
+
+#endif

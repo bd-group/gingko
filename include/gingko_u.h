@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-09-18 14:10:42 macan>
+ * Time-stamp: <2013-10-27 21:33:02 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,7 +59,6 @@
 #include <dlfcn.h>
 #include <libgen.h>
 #include "minilzo.h"
-#include <attr/xattr.h>
 #include <search.h>
 
 typedef unsigned long u64;
