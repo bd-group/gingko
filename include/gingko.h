@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 20:40:27 macan>
+ * Time-stamp: <2013-11-11 16:46:47 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@
 #include "page.h"
 #include "dfile.h"
 #include "su.h"
+#include "iapi.h"
 
 /* APIs */
 #include "hash.c"
@@ -53,8 +54,22 @@
 
 /* export APIs */
 
+#ifdef GINGKO_TRACING
+extern u32 gingko_api_tracing_flags;
+#endif
+
 #define SU_OPEN_RDONLY          0
 #define SU_OPEN_APPEND          1
+
+/* Init and fina a gingko environment */
+#define GINGKO_MAX_SUID         102400
+struct gingko_conf
+{
+    int max_suid;
+};
+
+int gingko_init(struct gingko_conf *);
+int gingko_fina(void);
 
 /* Open a SU, return SUID */
 int su_open(char *supath, int mode);

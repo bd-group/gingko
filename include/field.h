@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 08:56:24 macan>
+ * Time-stamp: <2013-11-11 17:14:03 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,20 @@
 #ifndef __FIELD_H__
 #define __FIELD_H__
 
+/* Define Type Const */
+#define GINGKO_INT8             1
+#define GINGKO_INT16            2
+#define GINGKO_INT32            3
+#define GINGKO_INT64            4
+#define GINGKO_FLOAT            5
+#define GINGKO_DOUBLE           6
+#define GINGKO_STRING           7
+#define GINGKO_BYTES            8
+#define GINGKO_ARRAY            9
+#define GINGKO_STRUCT           10
+#define GINGKO_MAP              11
+
+/* Define STR Length Type */
 #define SU_TYPE_STR_L1B         0
 #define SU_TYPE_STR_L2B         1
 #define SU_TYPE_STR_L3B         2
@@ -96,8 +110,13 @@ struct field
 {
     char *name;
     u16 id;
-    u16 pid;                    /* INVALID: -1 */
+#define FLD_MAX_PID             0xffff
+    u16 pid;                    /* INVALID: MAX_PID */
     u8 type;
+#define FLD_CODEC_NONE          0x00
+#define FLD_CODEC_RUNLENGTH     0x01
+#define FLD_CODEC_DELTA         0x02
+#define FLD_CODEC_DICT          0x03
     u8 codec;
     int cidnr;                  /* # of child fields */
 };

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 08:47:13 macan>
+ * Time-stamp: <2013-11-11 16:57:25 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,14 +24,21 @@
 #ifndef __DFILE_H__
 #define __DFILE_H__
 
+#define SU_META_FILENAME        "meta"
+#define SU_DFILE_FILENAME       "dfile"
+
 struct df_meta 
 {
+#define DF_META_VERSION                 1
     u8 version;
 #define DF_META_STATUS_INCREATE         0
 #define DF_META_STATUS_RDONLY           1
     u8 status;
     u16 reserved1;
     u32 flag;
+#define DF_META_COMP_ALGO_NONE          0x00
+#define DF_META_COMP_ALGO_LZO           0x01
+#define DF_META_COMP_ALGO_ZLIB          0x02
     u32 comp_algo;
     u64 file_len;
     u64 lnr;

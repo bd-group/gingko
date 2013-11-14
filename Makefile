@@ -2,7 +2,7 @@
 # Copyright (c) 2009 Ma Can <ml.macana@gmail.com>
 #                           <macan@ncic.ac.cn>
 #
-# Time-stamp: <2013-09-18 15:22:59 macan>
+# Time-stamp: <2013-11-11 17:17:28 macan>
 #
 # This is the makefile for GINGKO project.
 #
@@ -12,7 +12,7 @@ HOME_PATH = $(shell pwd)
 
 include Makefile.inc
 
-all : $(TARGET)
+all : $(TARGET) test
 
 $(GINGKO_LIB) : $(lib_depend_files)
 	@$(ECHO) -e " " CD"\t" $(LIB_PATH)
@@ -51,6 +51,7 @@ clean :
 	@$(MAKE) --no-print-directory -C $(INDEX) -e "HOME_PATH=$(HOME_PATH)" clean
 	@$(MAKE) --no-print-directory -C $(API) -e "HOME_PATH=$(HOME_PATH)" clean
 	@$(MAKE) --no-print-directory -C $(CODEC) -e "HOME_PATH=$(HOME_PATH)" clean
+	@$(MAKE) --no-print-directory -C $(TEST) -e "HOME_PATH=$(HOME_PATH)" clean
 
 help :
 	@$(ECHO) "Environment Variables:"
@@ -62,3 +63,7 @@ help :
 lib : $(GINGKO_LIB) $(SU_LIB) $(INDEX_LIB) $(CODEC_LIB) $(API_LIB)
 	@$(ECHO) -e " " Lib is ready.
 
+test : $(TARGET)
+	@$(ECHO) -e " " Build Unit Testcases ...
+	@$(ECHO) -e " " CD"\t" $(TEST)
+	@$(MAKE) --no-print-directory -C $(TEST) -e "HOME_PATH=$(HOME_PATH)"
