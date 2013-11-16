@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-11 16:57:25 macan>
+ * Time-stamp: <2013-11-12 14:20:38 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,13 +26,20 @@
 
 #define SU_META_FILENAME        "meta"
 #define SU_DFILE_FILENAME       "dfile"
+#define SU_L2P_FILENAME        "l2p"
+
+#define SU_META_ID                      0
+#define SU_DFILE_ID                     1
+#define SU_L2P_ID                       3
+#define SU_PER_DFILE_MAX                8
 
 struct df_meta 
 {
 #define DF_META_VERSION                 1
     u8 version;
 #define DF_META_STATUS_INCREATE         0
-#define DF_META_STATUS_RDONLY           1
+#define DF_META_STATUS_INITED           1
+#define DF_META_STATUS_RDONLY           2
     u8 status;
     u16 reserved1;
     u32 flag;
@@ -46,11 +53,21 @@ struct df_meta
     u16 l1fldnr;
 };
 
-struct pageindex_skiplist
+struct l2p_header
 {
-    u32 nr;                     /* # of base offsets */
-    u32 skiplines;              /* 0 or >0 */
-    u64 *boff;                  /* base off array, # = nr */
+    u32 nr;                     /* # of l2p entries*/
+};
+
+struct l2p_entry
+{
+    u64 lid;
+    u64 pgoff;
+};
+
+struct pageindex_l2p
+{
+    struct l2p_header ph;
+    struct l2p_entry *l2pa;
 };
 
 struct df_header 
@@ -58,13 +75,17 @@ struct df_header
     struct df_meta md;
     struct field *schemas;      /* field array, # = md.fldnr */
     u32 pgnr;
-    struct pageindex_skiplist pilist;
+    struct pageindex_l2p l2p;
+    void *lid_lookup_tree;
     u32 *pg_addr;
 };
     
 struct dfile 
 {
     struct df_header *dfh;
+
+    /* region for files' fds */
+    int *fds;                   /* SU_PER_DFILE_MAX */
 };
 
 struct index 

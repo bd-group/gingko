@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-11 16:50:42 macan>
+ * Time-stamp: <2013-11-16 16:39:14 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,11 +54,31 @@ struct gingko_su
 #define GSU_OPEN        2       /* openned for use */
 #define GSU_CLOSE       3       /* closed and cached */
     int state;
+    atomic_t ref;
 
     char *path;
     struct dfile *files;
     struct su_meta sm;
+
+    struct hlist_node hlist;    /* linked into hash table */
+
+    /* region for files' fd */
+    int smfd;
 };
+
+static inline void __gs_get(struct gingko_su *gs)
+{
+    atomic_inc(&gs->ref);
+}
+
+void __free_su(struct gingko_su *gs);
+
+static inline void __gs_put(struct gingko_su *gs)
+{
+    if (atomic_dec_return(&gs->ref) < 0) {
+        __free_su(gs);
+    }
+}
 
 /* flags for alloc SU (__alloc_su) */
 #define GSU_ALLOC_FREE_ONLY     0

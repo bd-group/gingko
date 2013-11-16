@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-11 17:14:32 macan>
+ * Time-stamp: <2013-11-12 15:28:45 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,14 +23,14 @@
 
 #include "gingko.h"
 
-int df_read_meta(struct gingko_su *gs, struct df_header *dfh)
+int df_read_meta(struct gingko_su *gs, struct dfile *df)
 {
     char path[4096];
-    int br, bl = 0, fd, err = 0, i;
+    int br, bl = 0, err = 0, i;
 
     sprintf(path, "%s/%s", gs->path, SU_DFILE_FILENAME);
-    fd = open(path, O_RDONLY);
-    if (fd < 0) {
+    df->fds[SU_META_ID] = open(path, O_RDONLY);
+    if (df->fds[SU_META_ID] < 0) {
         gingko_err(su, "open(%s) failed w/ %s(%d)\n",
                    path, strerror(errno), errno);
         return -errno;
@@ -39,7 +39,8 @@ int df_read_meta(struct gingko_su *gs, struct df_header *dfh)
     /* read in the MD */
     bl = 0;
     do {
-        br = read(fd, (void *)&dfh->md + bl, sizeof(dfh->md) - bl);
+        br = read(df->fds[SU_META_ID], (void *)&df->dfh->md + bl, 
+                  sizeof(df->dfh->md) - bl);
         if (br < 0) {
             gingko_err(su, "read %s failed w/ %s(%d)\n",
                        path, strerror(errno), errno);
@@ -51,23 +52,24 @@ int df_read_meta(struct gingko_su *gs, struct df_header *dfh)
             goto out;
         }
         bl += br;
-    } while (bl < sizeof(dfh->md));
+    } while (bl < sizeof(df->dfh->md));
 
     /* read in the schemas */
-    dfh->schemas = xzalloc(dfh->md.fldnr * sizeof(struct field));
-    if (!dfh->schemas) {
+    df->dfh->schemas = xzalloc(df->dfh->md.fldnr * sizeof(struct field));
+    if (!df->dfh->schemas) {
         gingko_err(su, "xzalloc() schemas failed\n");
         err = -ENOMEM;
         goto out;
     }
     
-    for (i = 0; i < dfh->md.fldnr; i++) {
+    for (i = 0; i < df->dfh->md.fldnr; i++) {
         struct field_d fdd;
         char *name;
         
         bl = 0;
         do {
-            br = read(fd, (void *)&fdd + bl, sizeof(fdd) - bl);
+            br = read(df->fds[SU_META_ID], (void *)&fdd + bl, 
+                      sizeof(fdd) - bl);
             if (br < 0) {
                 gingko_err(su, "read FDD from %s failed w/ %s(%d)\n",
                            path, strerror(errno), errno);
@@ -81,10 +83,10 @@ int df_read_meta(struct gingko_su *gs, struct df_header *dfh)
             bl += br;
         } while (bl < sizeof(fdd));
 
-        dfh->schemas[i].id = fdd.id;
-        dfh->schemas[i].pid = fdd.pid;
-        dfh->schemas[i].type = fdd.type;
-        dfh->schemas[i].id = fdd.codec;
+        df->dfh->schemas[i].id = fdd.id;
+        df->dfh->schemas[i].pid = fdd.pid;
+        df->dfh->schemas[i].type = fdd.type;
+        df->dfh->schemas[i].id = fdd.codec;
 
         name = xmalloc(fdd.namelen + 1);
         if (!name) {
@@ -94,7 +96,7 @@ int df_read_meta(struct gingko_su *gs, struct df_header *dfh)
         }
         bl = 0;
         do {
-            br = read(fd, name + bl, fdd.namelen - bl);
+            br = read(df->fds[SU_META_ID], name + bl, fdd.namelen - bl);
             if (br < 0) {
                 gingko_err(su, "read field name from %s failed w/ %s(%d)\n",
                            path, strerror(errno), errno);
@@ -108,73 +110,73 @@ int df_read_meta(struct gingko_su *gs, struct df_header *dfh)
             bl += br;
         } while (bl < fdd.namelen);
 
-        dfh->schemas[i].name = name;
+        df->dfh->schemas[i].name = name;
     }
 
     /* iterate and compute cidnr */
     {
-        int cidnrs[dfh->md.fldnr];
+        int cidnrs[df->dfh->md.fldnr];
 
-        for (i = 0; i < dfh->md.fldnr; i++) {
+        for (i = 0; i < df->dfh->md.fldnr; i++) {
             cidnrs[i] = 0;
         }
-        for (i = 0; i < dfh->md.fldnr; i++) {
-            if (dfh->schemas[i].pid != FLD_MAX_PID &&
-                dfh->schemas[i].pid < dfh->md.fldnr) {
-                cidnrs[dfh->schemas[i].pid]++;
+        for (i = 0; i < df->dfh->md.fldnr; i++) {
+            if (df->dfh->schemas[i].pid != FLD_MAX_PID &&
+                df->dfh->schemas[i].pid < df->dfh->md.fldnr) {
+                cidnrs[df->dfh->schemas[i].pid]++;
             }
         }
-        for (i = 0; i < dfh->md.fldnr; i++) {
-            dfh->schemas[i].cidnr = cidnrs[i];
+        for (i = 0; i < df->dfh->md.fldnr; i++) {
+            df->dfh->schemas[i].cidnr = cidnrs[i];
         }
     }
 
     gingko_debug(su, "Read dfh.md (v%d, st 0x%x, flag 0x%x, ca %d, flen %ld "
                  "lnr %ld fldnr %d l1fldnr %d\n",
-                 dfh->md.version,
-                 dfh->md.status,
-                 dfh->md.flag,
-                 dfh->md.comp_algo,
-                 dfh->md.file_len,
-                 dfh->md.lnr,
-                 dfh->md.fldnr,
-                 dfh->md.l1fldnr);
+                 df->dfh->md.version,
+                 df->dfh->md.status,
+                 df->dfh->md.flag,
+                 df->dfh->md.comp_algo,
+                 df->dfh->md.file_len,
+                 df->dfh->md.lnr,
+                 df->dfh->md.fldnr,
+                 df->dfh->md.l1fldnr);
 
     gingko_debug(su, "Schemas: \n");
 
-    for (i = 0; i < dfh->md.fldnr; i++) {
+    for (i = 0; i < df->dfh->md.fldnr; i++) {
         gingko_debug(su, " F: %s id %d pid %d type %d codec %d, cidnr %d\n", 
-                     dfh->schemas[i].name,
-                     dfh->schemas[i].id,
-                     dfh->schemas[i].pid,
-                     dfh->schemas[i].type,
-                     dfh->schemas[i].codec,
-                     dfh->schemas[i].cidnr);
+                     df->dfh->schemas[i].name,
+                     df->dfh->schemas[i].id,
+                     df->dfh->schemas[i].pid,
+                     df->dfh->schemas[i].type,
+                     df->dfh->schemas[i].codec,
+                     df->dfh->schemas[i].cidnr);
     }
 
 out:
-    close(fd);
-
     return err;
+
 out_free:
-    for (i = 0; i < dfh->md.fldnr; i++) {
-        xfree(dfh->schemas[i].name);
+    for (i = 0; i < df->dfh->md.fldnr; i++) {
+        xfree(df->dfh->schemas[i].name);
     }
-    xfree(dfh->schemas);
+    xfree(df->dfh->schemas);
     
     goto out;
 }
 
 /* Write df_header.meta and schemas
  */
-int df_write_meta(struct gingko_su *gs, struct df_header *dfh)
+int df_write_meta(struct gingko_su *gs, struct dfile *df, int write_schema)
 {
     char path[4096];
-    int err = 0, fd, bw, bl;
+    int err = 0, bw, bl;
 
     sprintf(path, "%s/%s", gs->path, SU_DFILE_FILENAME);
-    fd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-    if (fd < 0) {
+    df->fds[SU_DFILE_ID] = open(path, O_RDWR | O_CREAT, 
+                                S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    if (df->fds[SU_DFILE_ID] < 0) {
         gingko_err(su, "open(%s) failed w/ %s(%d)\n",
                    path, strerror(errno), errno);
         err = -errno;
@@ -184,68 +186,130 @@ int df_write_meta(struct gingko_su *gs, struct df_header *dfh)
     /* ok, write the meta to disk */
     bl = 0;
     do {
-        bw = write(fd, (void *)&dfh->md + bl, sizeof(dfh->md) - bl);
+        bw = write(df->fds[SU_DFILE_ID], (void *)&df->dfh->md + bl, 
+                   sizeof(df->dfh->md) - bl);
         if (bw < 0) {
             gingko_err(su, "write %s failed w/ %s(%d)\n",
                        path, strerror(errno), errno);
             err = -errno;
-            goto out_close;
+            goto out;
         }
         bl += bw;
-    } while (bl < sizeof(dfh->md));
+    } while (bl < sizeof(df->dfh->md));
 
     /* next, write schemas to disk */
-    {
+    if (write_schema) {
         int i = 0;
 
-        for (i = 0; i < dfh->md.fldnr; i++) {
+        for (i = 0; i < df->dfh->md.fldnr; i++) {
             struct field_d fdd = {
-                .id = dfh->schemas[i].id,
-                .pid = dfh->schemas[i].pid,
-                .type = dfh->schemas[i].type,
-                .codec = dfh->schemas[i].codec,
-                .namelen = strlen(dfh->schemas[i].name),
+                .id = df->dfh->schemas[i].id,
+                .pid = df->dfh->schemas[i].pid,
+                .type = df->dfh->schemas[i].type,
+                .codec = df->dfh->schemas[i].codec,
+                .namelen = strlen(df->dfh->schemas[i].name),
             };
 
             bl = 0;
             do {
-                bw = write(fd, (void *)&fdd + bl, sizeof(fdd) - bl);
+                bw = write(df->fds[SU_DFILE_ID], (void *)&fdd + bl, 
+                           sizeof(fdd) - bl);
                 if (bw < 0) {
                     gingko_err(su, "write FDD to %s failed w/ %s(%d)\n",
                                path, strerror(errno), errno);
                     err = -errno;
-                    goto out_close;
+                    goto out;
                 }
                 bl += bw;
             } while (bl < sizeof(fdd));
 
             bl = 0;
             do {
-                bw = write(fd, dfh->schemas[i].name + bl, fdd.namelen - bl);
+                bw = write(df->fds[SU_DFILE_ID], df->dfh->schemas[i].name + bl, 
+                           fdd.namelen - bl);
                 if (bw < 0) {
                     gingko_err(su, "write field name to %s failed w/ %s(%d)\n",
                                path, strerror(errno), errno);
                     err = -errno;
-                    goto out_close;
+                    goto out;
                 }
                 bl += bw;
             } while (bl < fdd.namelen);
         }
     }
 
-    gingko_debug(su, "Write dfh.md (v%d, st 0x%x, flag 0x%x, ca %d, flen %ld "
+    gingko_debug(su, "Write df->dfh.md (v%d, st 0x%x, flag 0x%x, ca %d, flen %ld "
                  "lnr %ld fldnr %d l1fldnr %d\n",
-                 dfh->md.version,
-                 dfh->md.status,
-                 dfh->md.flag,
-                 dfh->md.comp_algo,
-                 dfh->md.file_len,
-                 dfh->md.lnr,
-                 dfh->md.fldnr,
-                 dfh->md.l1fldnr);
+                 df->dfh->md.version,
+                 df->dfh->md.status,
+                 df->dfh->md.flag,
+                 df->dfh->md.comp_algo,
+                 df->dfh->md.file_len,
+                 df->dfh->md.lnr,
+                 df->dfh->md.fldnr,
+                 df->dfh->md.l1fldnr);
 
-out_close:
-    close(fd);
+out:
+    return err;
+}
+
+int df_write_l2p(struct gingko_su *gs, struct dfile *df)
+{
+    char path[4096];
+    int err = 0, bw, bl;
+
+    sprintf(path, "%s/%s", gs->path, SU_L2P_FILENAME);
+    df->fds[SU_L2P_ID] = open(path, O_RDWR | O_CREAT, 
+                              S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    if (df->fds[SU_L2P_ID] < 0) {
+        gingko_err(su, "open(%s) failed w/ %s(%d)\n",
+                   path, strerror(errno), errno);
+        err = -errno;
+        goto out;
+    }
+
+    /* ok, write pi l2p header to disk */
+    bl = 0;
+    do {
+        bw = write(df->fds[SU_L2P_ID], (void *)&df->dfh->l2p.ph + bl, 
+                   sizeof(df->dfh->l2p.ph) - bl);
+        if (bw < 0) {
+            gingko_err(su, "write %s failed w/ %s(%d)\n",
+                       path, strerror(errno), errno);
+            err = -errno;
+            goto out;
+        }
+        bl += bw;
+    } while (bl < sizeof(df->dfh->l2p.ph));
+
+    /* l2p_entries should append to this file */
+out:
+
+    return err;
+}
+
+int df_append_l2p(struct gingko_su *gs, struct l2p_entry *e)
+{
+    return 0;
+}
+
+int alloc_dfile(struct dfile *df)
+{
+    int err = 0;
+    
+    df->dfh = xzalloc(sizeof(*df->dfh));
+    if (!df->dfh) {
+        gingko_err(api, "xzalloc DFH failed\n");
+        err = -ENOMEM;
+        goto out;
+    }
+    df->fds = xzalloc(SU_PER_DFILE_MAX * sizeof(int));
+    if (!df->fds) {
+        gingko_err(su, "allocate DF fds failed, no memory.\n");
+        err = -ENOMEM;
+        goto out;
+    }
+
 out:
     return err;
 }
@@ -259,6 +323,12 @@ int init_dfile(struct gingko_su *gs, struct field schemas[], int schelen,
     df->dfh = xzalloc(sizeof(*df->dfh));
     if (!df->dfh) {
         gingko_err(su, "allocaate df_header failed, no memory.\n");
+        err = -ENOMEM;
+        goto out;
+    }
+    df->fds = xzalloc(SU_PER_DFILE_MAX * sizeof(int));
+    if (!df->fds) {
+        gingko_err(su, "allocate DF fds failed, no memory.\n");
         err = -ENOMEM;
         goto out;
     }
@@ -278,13 +348,28 @@ int init_dfile(struct gingko_su *gs, struct field schemas[], int schelen,
     df->dfh->schemas = schemas;
     
     /* write the df_header.meta and schemas */
-    err = df_write_meta(gs, df->dfh);
+    err = df_write_meta(gs, df, 1);
     if (err) {
         gingko_err(su, "df_write_meta failed w/ %s(%d)\n",
                    strerror(-err), -err);
         goto out_free;
     }
-    /* write the page skip */
+    /* write the page l2p array */
+    err = df_write_l2p(gs, df);
+    if (err) {
+        gingko_err(su, "df_write_l2p failed w/ %s(%d)\n",
+                   strerror(-err), -err);
+        goto out_free;
+    }
+
+    /* finally, update df_header.meta to DONE create! */
+    df->dfh->md.status = DF_META_STATUS_INITED;
+    err = df_write_meta(gs, df, 0);
+    if (err) {
+        gingko_err(su, "df_write_meta failed w/ %s(%d)\n",
+                   strerror(-err), -err);
+        goto out_free;
+    }
 
 out_free:
     xfree(df->dfh);
@@ -293,3 +378,18 @@ out:
     return err;
 }
 
+void fina_dfile(struct dfile *df)
+{
+    int j = 0;
+    
+    if (df->fds) {
+        for (j = 0; j < SU_PER_DFILE_MAX; j++) {
+            if (df->fds[j] > 0) {
+                fsync(df->fds[j]);
+                close(df->fds[j]);
+            }
+        }
+    }
+    xfree(df->dfh);
+    xfree(df->fds);
+}

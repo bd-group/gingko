@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2009-11-26 19:30:33 macan>
+ * Time-stamp: <2013-11-16 21:58:17 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,12 @@
 #define __ERR_H__
 
 #define MAX_ERRNO	4095
+
+#define EBADSU          1025
+#define EINCREATE       1026
+#define ERDONLY         1027
+#define EINTERNAL       1028
+#define ECONFLICT       1029
 
 #define IS_ERR_VALUE(x) unlikely((x) >= (unsigned long)-MAX_ERRNO)
 
@@ -54,6 +60,28 @@ static inline void *ERR_CAST(const void *ptr)
 {
 	/* cast away the const */
 	return (void *) ptr;
+}
+
+static char __UNUSED__ *gingko_strerror(int err)
+{
+    if (err < 0) {
+        switch (-err) {
+        case EBADSU:
+            return "Bad Store Unit";
+        case EINCREATE:
+            return "In IN CREATE State";
+        case ERDONLY:
+            return "In Read Only State";
+        case EINTERNAL:
+            return "Internal Error";
+        case ECONFLICT:
+            return "Conflict With Other";
+        }
+    } else {
+        return strerror(err);
+    }
+
+    return "Unknown Error";
 }
 
 #endif

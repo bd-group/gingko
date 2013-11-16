@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-11 15:00:22 macan>
+ * Time-stamp: <2013-11-12 15:29:27 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,14 +25,18 @@
 #define __IAPI_H__
 
 /* APIs */
-int df_read_meta(struct gingko_su *gs, struct df_header *dfh);
-int df_write_meta(struct gingko_su *gs, struct df_header *dfh);
+int df_read_meta(struct gingko_su *gs, struct dfile *df);
+int df_write_meta(struct gingko_su *gs, struct dfile *df, int write_schema);
+int df_write_l2p(struct gingko_su *gs, struct dfile *df);
 
 int su_read_meta(struct gingko_su *gs);
 int su_write_meta(struct gingko_su *gs);
 
 int verify_schema(struct field schemas[], int schelen);
+
+int alloc_dfile(struct dfile *df);
 int init_dfile(struct gingko_su *gs, struct field schemas[], int schelen, 
                struct dfile *df);
+void fina_dfile(struct dfile *df);
 
 #endif

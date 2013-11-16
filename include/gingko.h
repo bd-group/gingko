@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-11 16:46:47 macan>
+ * Time-stamp: <2013-11-12 15:33:48 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,10 +62,12 @@ extern u32 gingko_api_tracing_flags;
 #define SU_OPEN_APPEND          1
 
 /* Init and fina a gingko environment */
-#define GINGKO_MAX_SUID         102400
+#define GINGKO_MAX_SUID                 102400
+#define GINGKO_GSRH_SIZE                2048
 struct gingko_conf
 {
     int max_suid;
+    int gsrh_size;
 };
 
 int gingko_init(struct gingko_conf *);

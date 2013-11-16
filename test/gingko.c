@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-11 16:45:22 macan>
+ * Time-stamp: <2013-11-16 21:57:22 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +48,8 @@ int main(int argc, char *argv[])
         err = suid;
         goto out;
     }
+    printf("Create SU id=%d\n", suid);
+    su_close(suid);
 
     suid = su_open("./first_su", SU_OPEN_RDONLY);
     if (suid < 0) {
@@ -55,6 +57,9 @@ int main(int argc, char *argv[])
         err = suid;
         goto out;
     }
+    printf("Open   SU id=%d\n", suid);
+
+    su_close(suid);
 
 out:
     return err;

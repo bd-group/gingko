@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-11 17:06:11 macan>
+ * Time-stamp: <2013-11-12 14:16:09 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,11 +31,11 @@ int su_read_meta(struct gingko_su *gs)
 {
     char path[4096];
     struct su_meta_d smd;
-    int br, bl = 0, fd, err = 0;
+    int br, bl = 0, err = 0;
 
     sprintf(path, "%s/%s", gs->path, SU_META_FILENAME);
-    fd = open(path, O_RDONLY);
-    if (fd < 0) {
+    gs->smfd = open(path, O_RDONLY);
+    if (gs->smfd < 0) {
         gingko_err(su, "open(%s) failed w/ %s(%d)\n",
                    path, strerror(errno), errno);
         return -errno;
@@ -43,7 +43,7 @@ int su_read_meta(struct gingko_su *gs)
 
     bl = 0;
     do {
-        br = read(fd, (void *)&smd + bl, sizeof(smd) - bl);
+        br = read(gs->smfd, (void *)&smd + bl, sizeof(smd) - bl);
         if (br < 0) {
             gingko_err(su, "read %s failed w/ %s(%d)\n",
                        path, strerror(errno), errno);
@@ -71,7 +71,7 @@ int su_read_meta(struct gingko_su *gs)
         
         bl = 0;
         do {
-            br = read(fd, gs->sm.name + bl, smd.namelen - bl);
+            br = read(gs->smfd, gs->sm.name + bl, smd.namelen - bl);
             if (br < 0) {
                 gingko_err(su, "read %s name failed w/ %s(%d)\n",
                            path, strerror(errno), errno);
@@ -93,8 +93,6 @@ int su_read_meta(struct gingko_su *gs)
                  gs->sm.name);
 
 out:
-    close(fd);
-
     return err;
 }
 
@@ -102,11 +100,11 @@ int su_write_meta(struct gingko_su *gs)
 {
     char path[4096];
     struct su_meta_d *smd;
-    int err = 0, fd, len = 0, bw, bl;
+    int err = 0, len = 0, bw, bl;
 
     sprintf(path, "%s/%s", gs->path, SU_META_FILENAME);
-    fd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-    if (fd < 0) {
+    gs->smfd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    if (gs->smfd < 0) {
         gingko_err(su, "open(%s) failed w/ %s(%d)\n",
                    path, strerror(errno), errno);
         err = -errno;
@@ -118,7 +116,7 @@ int su_write_meta(struct gingko_su *gs)
     if (!smd) {
         gingko_err(su, "xzalloc() failed, no memory.\n");
         err = -ENOMEM;
-        goto out_close;
+        goto out;
     }
     
     smd->version = gs->sm.version;
@@ -130,12 +128,12 @@ int su_write_meta(struct gingko_su *gs)
     /* ok, write the meta to disk */
     bl = 0;
     do {
-        bw = write(fd, (void *)smd + bl, len - bl);
+        bw = write(gs->smfd, (void *)smd + bl, len - bl);
         if (bw < 0) {
             gingko_err(su, "write %s failed w/ %s(%d)\n",
                        path, strerror(errno), errno);
             err = -errno;
-            goto out_close;
+            goto out;
         }
         bl += bw;
     } while (bl < len);
@@ -146,8 +144,6 @@ int su_write_meta(struct gingko_su *gs)
                  gs->sm.dfnr,
                  gs->sm.name);
 
-out_close:
-    close(fd);
 out:
     return err;
 }
