@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-16 22:01:58 macan>
+ * Time-stamp: <2013-11-17 20:34:57 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -251,6 +251,10 @@ void __free_su(struct gingko_su *gs)
         fsync(gs->smfd);
         close(gs->smfd);
         gs->smfd = 0;
+    }
+
+    if (gs->root) {
+        __post_trav_schemas(gs->root, __free_schema);
     }
 
     xfree(gs->sm.name);
@@ -564,7 +568,7 @@ retry:
     }
 
     /* Step 2: parse field schema to generate a schema tree */
-    err = verify_schema(schemas, schelen);
+    err = verify_schema(gs, schemas, schelen);
     if (err) {
         gingko_err(api, "verify_schema() failed w/ %s(%d)\n",
                    strerror(errno), errno);
@@ -620,8 +624,24 @@ out_free:
  */
 int su_write(int suid, struct line *line, long lid)
 {
+    struct gingko_su *gs;
     int err = 0;
-    
+
+    if (suid >= g_mgr.gc->max_suid) {
+        err = -EINVAL;
+        goto out;
+    }
+
+    gs = g_mgr.gsu + suid;
+    if (lid != gs->last_lid) {
+        gingko_err(api, "Invalid line ID %ld but expect %ld.\n",
+                   lid, gs->last_lid);
+        err = -EINVAL;
+        goto out;
+    }
+
+    /* parse the line with SCHEMAs */
+out:
     return err;
 }
 

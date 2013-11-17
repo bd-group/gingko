@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-11 17:14:03 macan>
+ * Time-stamp: <2013-11-17 12:59:41 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -137,6 +137,18 @@ struct field_d
     u8 codec;
     u8 namelen;
     char name[0];
+};
+
+/* for tree use */
+struct field_t
+{
+#define FIELD_TYPE_ROOT         0
+#define FIELD_TYPE_INTER        1
+#define FIELD_TYPE_LEAF         2
+    int type;
+    int cnr;                    /* child number */
+    struct field fld;
+    struct field_t **cld;
 };
 
 #endif

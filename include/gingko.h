@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-12 15:33:48 macan>
+ * Time-stamp: <2013-11-17 16:02:34 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,8 @@
 #ifndef __GINGKO_H__
 #define __GINGKO_H__
 
+#define __UNUSED__ __attribute__((unused))
+
 #include "gingko_u.h"
 
 #include "tracing.h"
@@ -43,8 +45,6 @@
 
 /* APIs */
 #include "hash.c"
-
-#define __UNUSED__ __attribute__((unused))
 
 #define BITMAP_ROUNDUP(x) (((x + 1) + XTABLE_BITMAP_SIZE - 1) & \
                            ~(XTABLE_BITMAP_SIZE - 1))

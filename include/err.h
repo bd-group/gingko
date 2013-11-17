@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-16 21:58:17 macan>
+ * Time-stamp: <2013-11-17 16:03:23 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -76,8 +76,12 @@ static char __UNUSED__ *gingko_strerror(int err)
             return "Internal Error";
         case ECONFLICT:
             return "Conflict With Other";
+        default:
+            err = -err;
+            goto other;
         }
     } else {
+    other:
         return strerror(err);
     }
 

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-16 21:57:22 macan>
+ * Time-stamp: <2013-11-17 19:35:01 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,10 +26,20 @@
 int main(int argc, char *argv[])
 {
     int err = 0, suid;
-    struct field schemas[2] = {
-        {.name = "field1", .id = 0, .pid = -1, .type = GINGKO_INT64, 
+    struct field schemas[7] = {
+        {.name = "field1", .id = 0, .pid = FLD_MAX_PID, .type = GINGKO_INT64, 
          .codec = FLD_CODEC_NONE, .cidnr = 0},
-        {.name = "field2", .id = 1, .pid = -1, .type = GINGKO_DOUBLE,
+        {.name = "field2", .id = 1, .pid = FLD_MAX_PID, .type = GINGKO_DOUBLE,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field3", .id = 2, .pid = FLD_MAX_PID, .type = GINGKO_ARRAY,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field4", .id = 3, .pid = 2, .type = GINGKO_INT32,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field5", .id = 4, .pid = FLD_MAX_PID, .type = GINGKO_STRUCT,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field6", .id = 5, .pid = 4, .type = GINGKO_INT64,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field7", .id = 6, .pid = 4, .type = GINGKO_DOUBLE,
          .codec = FLD_CODEC_NONE, .cidnr = 0},
     };
 
@@ -42,7 +52,7 @@ int main(int argc, char *argv[])
         goto out;
     }
     
-    suid = su_create("./first_su", schemas, 2);
+    suid = su_create("./first_su", schemas, 7);
     if (suid < 0) {
         printf("su_create() failed w/ %d\n", suid);
         err = suid;

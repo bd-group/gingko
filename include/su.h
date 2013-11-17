@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-16 16:39:14 macan>
+ * Time-stamp: <2013-11-16 22:20:28 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,6 +62,11 @@ struct gingko_su
 
     struct hlist_node hlist;    /* linked into hash table */
 
+    long last_lid;
+
+    /* schema tree from all dfiles */
+    struct field_t *root;
+    
     /* region for files' fd */
     int smfd;
 };

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-12 15:29:27 macan>
+ * Time-stamp: <2013-11-17 20:34:38 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,11 +32,15 @@ int df_write_l2p(struct gingko_su *gs, struct dfile *df);
 int su_read_meta(struct gingko_su *gs);
 int su_write_meta(struct gingko_su *gs);
 
-int verify_schema(struct field schemas[], int schelen);
-
 int alloc_dfile(struct dfile *df);
 int init_dfile(struct gingko_su *gs, struct field schemas[], int schelen, 
                struct dfile *df);
 void fina_dfile(struct dfile *df);
+
+int verify_schema(struct gingko_su *gs, struct field schemas[], int schelen);
+typedef void (*tfunc)(void *arg);
+void __pre_trav_schemas(struct field_t *root, tfunc cb);
+void __post_trav_schemas(struct field_t *root, tfunc cb);
+void __free_schema(void *arg);
 
 #endif

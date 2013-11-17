@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-12 15:28:45 macan>
+ * Time-stamp: <2013-11-17 16:37:33 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -334,7 +334,7 @@ int init_dfile(struct gingko_su *gs, struct field schemas[], int schelen,
     }
 
     for (i = 0; i < schelen; i++) {
-        if (schemas[i].pid == -1) {
+        if (schemas[i].pid == FLD_MAX_PID) {
             l1fldnr++;
         }
     }
