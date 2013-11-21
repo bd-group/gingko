@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-17 16:02:34 macan>
+ * Time-stamp: <2013-11-21 11:04:15 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -81,6 +81,19 @@ struct field *su_getschema(int suid);
 
 /* Create a SU */
 int su_create(char *supath, struct field schemas[], int schlen);
+
+/* Build a line */
+int su_linepack(struct line *line, struct field_2pack *flds[], int l1fldnr);
+
+/* Build a field */
+int su_fieldpack(struct field_2pack *pfld, struct field_2pack *cfld);
+
+/* Build a l1field array */
+struct field_2pack **su_l1fieldpack(struct field_2pack **fld, int *fldnr,
+                                    struct field_2pack *new);
+
+/* New a field */
+struct field_2pack *su_new_field(u8 type, void *data, int dlen);
 
 /* Write a line to SU */
 int su_write(int suid, struct line* line, long lid);

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-17 20:34:38 macan>
+ * Time-stamp: <2013-11-20 16:40:52 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,5 +42,10 @@ typedef void (*tfunc)(void *arg);
 void __pre_trav_schemas(struct field_t *root, tfunc cb);
 void __post_trav_schemas(struct field_t *root, tfunc cb);
 void __free_schema(void *arg);
+
+struct field_t *alloc_field_t(int type);
+int linepack_primitive(struct line *line, void *data, int dlen);
+int linepack_string(struct line *line, void *data, int dlen);
+int linepack_complex(struct line *line, struct field_2pack *fld);
 
 #endif

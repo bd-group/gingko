@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-17 20:34:57 macan>
+ * Time-stamp: <2013-11-21 11:06:13 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -209,6 +209,17 @@ struct gingko_su *__alloc_su(struct gingko_manager *gm, int flag)
                sizeof(*gs) - sizeof(gs->state));
         INIT_HLIST_NODE(&gs->hlist);
         atomic_set(&gs->ref, 0);
+        /* init the ROOT of schema tree */
+        {
+            struct field_t *root;
+
+            root = alloc_field_t(FIELD_TYPE_ROOT);
+            if (!root) {
+                gingko_err(su, "alloc root field_t failed.\n");
+                return NULL;
+            }
+            gs->root = root;
+        }
     }
 
     return gs;
@@ -620,6 +631,115 @@ out_free:
     return err;
 }
 
+struct field_2pack *su_new_field(u8 type, void *data, int dlen)
+{
+    struct field_2pack *fld;
+
+    fld = xzalloc(sizeof(*fld));
+    if (!fld) {
+        gingko_err(api, "xzalloc() field_2pack failed\n");
+        fld = ERR_PTR(-ENOMEM);
+        goto out;
+    }
+    fld->type = type;
+    fld->data = data;
+    fld->dlen = dlen;
+    
+out:
+    return fld;
+}
+
+int su_fieldpack(struct field_2pack *pfld, struct field_2pack *cfld)
+{
+    void *tmp;
+    int err = 0;
+    
+    if (!pfld || !cfld || IS_ERR(cfld) || IS_ERR(pfld))
+        return -EINVAL;
+    if (pfld->cidnr == 0)
+        pfld->clds = NULL;
+
+    tmp = xrealloc(pfld->clds, sizeof(pfld) * (pfld->cidnr + 1));
+    if (!tmp) {
+        gingko_err(api, "xrealloc() child f2p failed, no memory.\n");
+        err = -ENOMEM;
+        goto out;
+    }
+    pfld->clds = tmp;
+    pfld->clds[pfld->cidnr] = cfld;
+    pfld->cidnr++;
+    
+out:
+    return err;
+}
+
+struct field_2pack **su_l1fieldpack(struct field_2pack **fld, int *fldnr,
+                                    struct field_2pack *new)
+{
+    void *p;
+
+    if (IS_ERR(new) || !new || !fldnr)
+        return ERR_PTR(-EINVAL);
+    
+    p = xrealloc(fld, sizeof(*fld) * (*fldnr + 1));
+    if (!p) {
+        gingko_err(api, "xrealloc field_2pack* array failed, no memory.\n");
+        return ERR_PTR(-ENOMEM);
+    }
+    fld = p;
+    fld[*fldnr] = new;
+    *fldnr += 1;
+
+    return p;
+}
+
+/* Build a line
+ */
+int su_linepack(struct line *line, struct field_2pack *flds[], int l1fldnr)
+{
+    int err = 0, i;
+
+    if (!line || !flds)
+        return -EINVAL;
+
+    memset(line, 0, sizeof(*line));
+
+    for (i = 0; i < l1fldnr; i++) {
+        switch (flds[i]->type) {
+        case GINGKO_INT8:
+            err = linepack_primitive(line, flds[i]->data, 1);
+            break;
+        case GINGKO_INT16:
+            err = linepack_primitive(line, flds[i]->data, 2);
+            break;
+        case GINGKO_INT32:
+        case GINGKO_FLOAT:
+            err = linepack_primitive(line, flds[i]->data, 4);
+            break;
+        case GINGKO_INT64:
+        case GINGKO_DOUBLE:
+            err = linepack_primitive(line, flds[i]->data, 8);
+            break;
+        case GINGKO_STRING:
+        case GINGKO_BYTES:
+            err = linepack_string(line, flds[i]->data, flds[i]->dlen);
+            break;
+        case GINGKO_ARRAY:
+        case GINGKO_STRUCT:
+        case GINGKO_MAP:
+            err = linepack_complex(line, flds[i]);
+            break;
+        default:
+            gingko_err(api, "Invalid field type=%d\n", flds[i]->type);
+            err = -EINVAL;
+            goto out;
+        }
+    }
+
+out:
+    return err;
+}
+
 /* Write a line to SU
  */
 int su_write(int suid, struct line *line, long lid)
@@ -631,6 +751,7 @@ int su_write(int suid, struct line *line, long lid)
         err = -EINVAL;
         goto out;
     }
+    /* FIXME: check if this gs allows write */
 
     gs = g_mgr.gsu + suid;
     if (lid != gs->last_lid) {
@@ -640,7 +761,15 @@ int su_write(int suid, struct line *line, long lid)
         goto out;
     }
 
-    /* parse the line with SCHEMAs */
+    /* parse the line with SCHEMAs 
+    err = build_lineheader(gs, line, lid);
+    if (err) {
+        gingko_err(api, "build_lineheader failed w/ %s(%d)\n",
+                   gingko_strerror(err), err);
+        goto out;
+    }
+    */
+    
 out:
     return err;
 }

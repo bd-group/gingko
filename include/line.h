@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 08:47:40 macan>
+ * Time-stamp: <2013-11-20 16:33:50 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,7 +41,7 @@ struct lineheader
 struct line
 {
     struct lineheader *lh;  //line header
-    void *ld;               //line data
+    void *data;             //line data
     int len;
 };
 

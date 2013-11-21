@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-17 12:59:41 macan>
+ * Time-stamp: <2013-11-20 23:08:25 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,11 +37,16 @@
 #define GINGKO_STRUCT           10
 #define GINGKO_MAP              11
 
-/* Define STR Length Type */
-#define SU_TYPE_STR_L1B         0
-#define SU_TYPE_STR_L2B         1
-#define SU_TYPE_STR_L3B         2
-#define SU_TYPE_STR_L4B         3
+/* Define Length Type */
+#define SU_TYPE_L1B             0
+#define SU_TYPE_L2B             1
+#define SU_TYPE_L3B             2
+#define SU_TYPE_L4B             3
+
+#define SU_LEN_L1B_MAX          64
+#define SU_LEN_L2B_MAX          8192
+#define SU_LEN_L3B_MAX          (4 * 1024 * 1024)
+#define SU_LEN_L4B_MAX          (1024 * 1024 * 1024)
 
 struct l1b 
 {
@@ -126,6 +131,8 @@ struct field_2pack
     u8 type;
     int cidnr;                  /* # of appended child fields */
     void *data;
+    int dlen;
+    struct field_2pack **clds;
 };
 
 /* for storage use */
@@ -149,6 +156,7 @@ struct field_t
     int cnr;                    /* child number */
     struct field fld;
     struct field_t **cld;
+    void *ptr;                  /* private data */
 };
 
 #endif
