@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-21 11:06:13 macan>
+ * Time-stamp: <2013-11-21 13:19:00 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,11 +33,23 @@ static struct gingko_conf g_conf = {
     .gsrh_size = GINGKO_GSRH_SIZE,
 };
 
+struct gingko_suid
+{
+#define GSU_FREE        0       /* can use for allocate */
+#define GSU_INIT        1       /* inited but not open */
+#define GSU_OPEN        2       /* openned for use */
+#define GSU_CLOSE       3       /* closed and cached */
+    int state;
+
+    int mode;
+    struct gingko_su *gs;
+};
+
 struct gingko_manager
 {
     struct gingko_conf *gc;
 
-    struct gingko_su *gsu;
+    struct gingko_suid *gsu;
     xlock_t gsu_lock;
     int gsu_used;
 
@@ -61,7 +73,7 @@ int gingko_init(struct gingko_conf *conf)
 
     g_mgr.gsu = xzalloc(sizeof(*g_mgr.gsu) * conf->max_suid);
     if (!g_mgr.gsu) {
-        gingko_err(api, "xzalloc(%d * gingko_su) failed", conf->max_suid);
+        gingko_err(api, "xzalloc(%d * gingko_su*) failed", conf->max_suid);
         err = -ENOMEM;
         goto out;
     }
@@ -183,30 +195,33 @@ void __gsrh_remove(struct gingko_su *gs)
     xlock_unlock(&rh->lock);
 }
 
-struct gingko_su *__alloc_su(struct gingko_manager *gm, int flag)
+struct gingko_suid *__alloc_su(struct gingko_manager *gm, int flag)
 {
+    struct gingko_suid *gid = NULL;
     struct gingko_su *gs = NULL;
     int i, found = 0;
     
     if (!gm)
         return NULL;
 
+    gs = xzalloc(sizeof(*gs));
+    if (!gs)
+        return NULL;
+
     xlock_lock(&gm->gsu_lock);
     for (i = 0; i < gm->gc->max_suid; i++) {
-        gs = gm->gsu + i;
-        if (gs->state == GSU_FREE ||
-            (gs->state == GSU_CLOSE && flag == GSU_ALLOC_HARD)) {
+        gid = gm->gsu + i;
+        if (gid->state == GSU_FREE ||
+            (gid->state == GSU_CLOSE && flag == GSU_ALLOC_HARD)) {
             /* ok, this entry is good to use */
             found = 1;
-            gs->state = GSU_INIT;
+            gid->state = GSU_INIT;
             break;
         }
     }
     xlock_unlock(&gm->gsu_lock);
 
     if (found) {
-        memset((void *)gs + sizeof(gs->state), 0,
-               sizeof(*gs) - sizeof(gs->state));
         INIT_HLIST_NODE(&gs->hlist);
         atomic_set(&gs->ref, 0);
         /* init the ROOT of schema tree */
@@ -220,17 +235,25 @@ struct gingko_su *__alloc_su(struct gingko_manager *gm, int flag)
             }
             gs->root = root;
         }
+        gid ->gs = gs;
     }
 
-    return gs;
+    return gid;
 }
 
-static int __calc_suid(struct gingko_manager *gm, struct gingko_su *gs)
+static int __calc_suid(struct gingko_manager *gm, struct gingko_suid *gid)
 {
-    if (!gm || !gs)
+    if (!gm || !gid)
         return -1;
 
-    return ((void *)gs - (void *)gm->gsu) / sizeof(*gs);
+    return ((void *)gid - (void *)gm->gsu) / sizeof(*gid);
+}
+
+void __free_suid(struct gingko_suid *gid)
+{
+    __gs_put(gid->gs);
+
+    memset(gid, 0, sizeof(*gid));
 }
 
 void __free_su(struct gingko_su *gs)
@@ -239,6 +262,8 @@ void __free_su(struct gingko_su *gs)
 
     if (!gs)
         return;
+
+    gingko_verbose(api, "Free SU %p\n", gs);
 
     if (atomic_read(&gs->ref) >= 0) {
         GINGKO_BUGON("invalid SU reference.");
@@ -270,7 +295,7 @@ void __free_su(struct gingko_su *gs)
 
     xfree(gs->sm.name);
 
-    memset(gs, 0, sizeof(*gs));
+    xfree(gs);
 }
 
 static int __su_sync(struct gingko_su *gs)
@@ -315,19 +340,21 @@ out:
  */
 int su_open(char *supath, int mode) 
 {
+    struct gingko_suid *gid = NULL;
     struct gingko_su *gs = NULL;
     struct stat st;
     int suid, err = 0, i;
 
     /* Step 1: find and allocate the gingko_su */
-    gs = __alloc_su(&g_mgr, GSU_ALLOC_FREE_ONLY);
-    if (!gs) {
+    gid = __alloc_su(&g_mgr, GSU_ALLOC_FREE_ONLY);
+    if (!gid) {
         gingko_err(api, "allocate SU (FREE_ONLY) failed.\n");
         err = -ENOMEM;
         goto out;
     }
-    suid = __calc_suid(&g_mgr, gs);
-    gingko_debug(api, "Allocate SU %p idx %d\n", gs, suid);
+    gid->mode = mode;
+    gs = gid->gs;
+    suid = __calc_suid(&g_mgr, gid);
 
     /* Step 2: check if the path exists and contains content */
     err = stat(supath, &st);
@@ -385,7 +412,9 @@ int su_open(char *supath, int mode)
                 break;
             }
             __gs_put(gs);
-            err = __calc_suid(&g_mgr, other);
+            gid->gs = other;
+            gingko_debug(api, "Reuse SU %p idx %d\n", gid->gs, suid);
+            err = suid;
             goto out;
         }
     }
@@ -475,7 +504,7 @@ retry:
         }
         __gs_put(gs);
         __gs_put(gs);           /* double put as free */
-        suid = __calc_suid(&g_mgr, other);
+        gid->gs = other;
         break;
     }
     default:
@@ -485,13 +514,14 @@ retry:
     }
 
     /* ok, we have build the GS, return the suid now */
+    gingko_debug(api, "Allocate SU %p idx %d\n", gs, suid);
     err = suid;
     
 out:
     return err;
 
 out_free:
-    __gs_put(gs);
+    __free_suid(gid);
     return err;
 }
 
@@ -509,6 +539,7 @@ struct field *su_getschema(int suid)
 int su_create(char *supath, struct field schemas[], int schelen)
 {
     struct stat st;
+    struct gingko_suid *gid;
     struct gingko_su *gs;
     int err = 0, suid, i;
 
@@ -537,20 +568,20 @@ int su_create(char *supath, struct field schemas[], int schelen)
         goto out;
     }
 
-    gs = __alloc_su(&g_mgr, GSU_ALLOC_FREE_ONLY);
-    if (!gs) {
+    gid = __alloc_su(&g_mgr, GSU_ALLOC_FREE_ONLY);
+    if (!gid) {
         gingko_err(api, "allocate SU (FREE_ONLY) faield, no memory.\n");
         err = -ENOMEM;
         goto out;
     }
+    gs = gid->gs;
     gs->path = strdup(supath);
     if (!gs->path) {
         gingko_err(api, "allocate supath failed, no memory.\n");
         err = -ENOMEM;
         goto out;
     }
-    suid = __calc_suid(&g_mgr, gs);
-    gingko_debug(api, "Allocate SU %p idx %d\n", gs, suid);
+    suid = __calc_suid(&g_mgr, gid);
     
     /* Step 1: write the su.meta */
     gs->sm.version = SU_META_VERSION;
@@ -565,7 +596,7 @@ retry:
 
         other = __gsrh_lookup(gs->sm.name);
         if (other) {
-            /* conflicts, then  regenerate name */
+            /* conflicts, then regenerate name */
             __gs_put(other);
             goto retry;
         }
@@ -623,11 +654,15 @@ retry:
         __gs_put(gs);
         goto out_free;
     }
-    
+
+    /* ok, we have build the GS, return the suid now */    
+    gingko_debug(api, "Allocate SU %p idx %d\n", gs, suid);
+    err = suid;
+
 out:
     return err;
 out_free:
-    __gs_put(gs);
+    __free_suid(gid);
     return err;
 }
 
@@ -744,7 +779,7 @@ out:
  */
 int su_write(int suid, struct line *line, long lid)
 {
-    struct gingko_su *gs;
+    struct gingko_suid *gid;
     int err = 0;
 
     if (suid >= g_mgr.gc->max_suid) {
@@ -753,10 +788,10 @@ int su_write(int suid, struct line *line, long lid)
     }
     /* FIXME: check if this gs allows write */
 
-    gs = g_mgr.gsu + suid;
-    if (lid != gs->last_lid) {
+    gid = g_mgr.gsu + suid;
+    if (lid != gid->gs->last_lid) {
         gingko_err(api, "Invalid line ID %ld but expect %ld.\n",
-                   lid, gs->last_lid);
+                   lid, gid->gs->last_lid);
         err = -EINVAL;
         goto out;
     }
@@ -778,7 +813,7 @@ out:
  */
 int su_sync(int suid)
 {
-    struct gingko_su *gs;
+    struct gingko_suid *gid;
     int err = 0;
 
     if (suid >= g_mgr.gc->max_suid) {
@@ -786,11 +821,11 @@ int su_sync(int suid)
         goto out;
     }
 
-    gs = g_mgr.gsu + suid;
-    err = __su_sync(gs);
+    gid = g_mgr.gsu + suid;
+    err = __su_sync(gid->gs);
     if (err) {
         gingko_err(api, "__su_sync(%s) failed w/ %s(%d)\n",
-                   gs->sm.name, gingko_strerror(err), err);
+                   gid->gs->sm.name, gingko_strerror(err), err);
         goto out;
     }
     
@@ -802,7 +837,7 @@ out:
  */
 int su_close(int suid)
 {
-    struct gingko_su *gs;
+    struct gingko_suid *gid;
     int err = 0;
 
     if (suid >= g_mgr.gc->max_suid) {
@@ -810,11 +845,11 @@ int su_close(int suid)
         goto out;
     }
     
-    gs = g_mgr.gsu + suid;
+    gid = g_mgr.gsu + suid;
     gingko_debug(api, "Close SU '%s', id=%d, pre-put:ref=%d\n",
-                 gs->sm.name, suid, atomic_read(&gs->ref));
+                 gid->gs->sm.name, suid, atomic_read(&gid->gs->ref));
 
-    __gs_put(gs);
+    __free_suid(gid);
 
 out:
     return err;

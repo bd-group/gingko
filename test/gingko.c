@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-21 11:05:35 macan>
+ * Time-stamp: <2013-11-21 13:20:42 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@ void __dump_f2p(struct field_2pack **fld, int fldnr)
 
 int main(int argc, char *argv[])
 {
-    int err = 0, suid;
+    int err = 0, suidr, suidw;
     struct field schemas[7] = {
         {.name = "field1", .id = 0, .pid = FLD_MAX_PID, .type = GINGKO_INT64, 
          .codec = FLD_CODEC_NONE, .cidnr = 0},
@@ -62,22 +62,21 @@ int main(int argc, char *argv[])
         goto out;
     }
     
-    suid = su_create("./first_su", schemas, 7);
-    if (suid < 0) {
-        printf("su_create() failed w/ %d\n", suid);
-        err = suid;
+    suidw = su_create("./first_su", schemas, 7);
+    if (suidw < 0) {
+        printf("su_create() failed w/ %d\n", suidw);
+        err = suidw;
         goto out;
     }
-    printf("Create SU id=%d\n", suid);
-    su_close(suid);
+    printf("Create SU id=%d\n", suidw);
 
-    suid = su_open("./first_su", SU_OPEN_RDONLY);
-    if (suid < 0) {
-        printf("su_open() failedd w/ %d\n", suid);
-        err = suid;
+    suidr = su_open("./first_su", SU_OPEN_RDONLY);
+    if (suidr < 0) {
+        printf("su_open() failedd w/ %d\n", suidr);
+        err = suidr;
         goto out;
     }
-    printf("Open   SU id=%d\n", suid);
+    printf("Open   SU id=%d\n", suidr);
 
     /* pack a data line */
     {
@@ -155,7 +154,8 @@ int main(int argc, char *argv[])
         su_linepack(&l, flds, 4);
     }
 
-    su_close(suid);
+    su_close(suidw);
+    su_close(suidr);
 
 out:
     return err;

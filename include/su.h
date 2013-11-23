@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-16 22:20:28 macan>
+ * Time-stamp: <2013-11-21 11:28:40 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -49,11 +49,6 @@ struct su_meta
 
 struct gingko_su
 {
-#define GSU_FREE        0       /* can use for allocate */
-#define GSU_INIT        1       /* inited but not open */
-#define GSU_OPEN        2       /* openned for use */
-#define GSU_CLOSE       3       /* closed and cached */
-    int state;
     atomic_t ref;
 
     char *path;
