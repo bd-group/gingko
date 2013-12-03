@@ -40,9 +40,10 @@
 #include "dfile.h"
 #include "su.h"
 #include "iapi.h"
-
+/* GCC extend define */
+#include "pre.h"
 /* APIs */
-#include "hash.c"
+
 
 #define __UNUSED__ __attribute__((unused))
 
