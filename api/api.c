@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-21 13:19:00 macan>
+ * Time-stamp: <2013-11-24 21:33:28 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,12 @@ u32 gingko_api_tracing_flags;
 static struct gingko_conf g_conf = {
     .max_suid = GINGKO_MAX_SUID,
     .gsrh_size = GINGKO_GSRH_SIZE,
+    .pcrh_size = GINGKO_PCRH_SIZE,
+};
+
+static struct su_conf g_sc = {
+    .page_size = SU_PAGE_SIZE,
+    .page_algo = SU_PH_COMP_NONE,
 };
 
 struct gingko_suid
@@ -56,7 +62,7 @@ struct gingko_manager
     struct regular_hash *gsrh;
 };
 
-static struct gingko_manager g_mgr = {
+struct gingko_manager g_mgr = {
     .gc = &g_conf,
     .gsu = NULL,
     .gsu_used = 0,
@@ -73,7 +79,7 @@ int gingko_init(struct gingko_conf *conf)
 
     g_mgr.gsu = xzalloc(sizeof(*g_mgr.gsu) * conf->max_suid);
     if (!g_mgr.gsu) {
-        gingko_err(api, "xzalloc(%d * gingko_su*) failed", conf->max_suid);
+        gingko_err(api, "xzalloc(%d * gingko_su*) failed\n", conf->max_suid);
         err = -ENOMEM;
         goto out;
     }
@@ -81,7 +87,7 @@ int gingko_init(struct gingko_conf *conf)
 
     g_mgr.gsrh = xzalloc(sizeof(*g_mgr.gsrh) * conf->gsrh_size);
     if (!g_mgr.gsrh) {
-        gingko_err(api, "xzalloc(%d * GSRH) failed", conf->gsrh_size);
+        gingko_err(api, "xzalloc(%d * GSRH) failed\n", conf->gsrh_size);
         err = -ENOMEM;
         goto out;
     }
@@ -92,6 +98,14 @@ int gingko_init(struct gingko_conf *conf)
 
     /* init lib */
     lib_init();
+
+    /* init page cache */
+    err = pagecache_init(conf);
+    if (err) {
+        gingko_err(api, "page cache init failed w/ %s(%d)\n",
+                   gingko_strerror(err), err);
+        goto out;
+    }
     
 out:
     return err;
@@ -108,7 +122,6 @@ int gingko_fina(void)
 
 static char *__generate_name()
 {
-#define SU_NAME_LEN             32
     char name[SU_NAME_LEN + 1];
     int i;
 
@@ -536,7 +549,8 @@ struct field *su_getschema(int suid)
  *
  * Args: parent(supath) should exist, and supath should not exist
  */
-int su_create(char *supath, struct field schemas[], int schelen)
+int su_create(struct su_conf *sc, char *supath, struct field schemas[], 
+              int schelen)
 {
     struct stat st;
     struct gingko_suid *gid;
@@ -574,6 +588,7 @@ int su_create(char *supath, struct field schemas[], int schelen)
         err = -ENOMEM;
         goto out;
     }
+    gid->mode = SU_OPEN_APPEND;
     gs = gid->gs;
     gs->path = strdup(supath);
     if (!gs->path) {
@@ -581,6 +596,12 @@ int su_create(char *supath, struct field schemas[], int schelen)
         err = -ENOMEM;
         goto out;
     }
+
+    if (sc == NULL)
+        gs->conf = g_sc;
+    else
+        gs->conf = *sc;
+
     suid = __calc_suid(&g_mgr, gid);
     
     /* Step 1: write the su.meta */
@@ -733,10 +754,22 @@ struct field_2pack **su_l1fieldpack(struct field_2pack **fld, int *fldnr,
 int su_linepack(struct line *line, struct field_2pack *flds[], int l1fldnr)
 {
     int err = 0, i;
+    void *x;
 
     if (!line || !flds)
         return -EINVAL;
 
+    x = xzalloc((l1fldnr + 1) * sizeof(struct lineheader));
+    if (!x) {
+        gingko_err(api, "xzalloc() %d linehader failed, no memory.\n",
+                   l1fldnr);
+        err = -ENOMEM;
+        goto out;
+    }
+    line->lh = x;
+    line->lh[0].l1fld = l1fldnr;
+    line->lh[0].len = l1fldnr;
+    
     memset(line, 0, sizeof(*line));
 
     for (i = 0; i < l1fldnr; i++) {
@@ -786,9 +819,14 @@ int su_write(int suid, struct line *line, long lid)
         err = -EINVAL;
         goto out;
     }
-    /* FIXME: check if this gs allows write */
-
     gid = g_mgr.gsu + suid;
+
+    /* check if this gs allows write */
+    if (gid->mode != SU_OPEN_APPEND) {
+        err = -ERDONLY;
+        goto out;
+    }
+
     if (lid != gid->gs->last_lid) {
         gingko_err(api, "Invalid line ID %ld but expect %ld.\n",
                    lid, gid->gs->last_lid);
@@ -796,15 +834,25 @@ int su_write(int suid, struct line *line, long lid)
         goto out;
     }
 
-    /* parse the line with SCHEMAs 
-    err = build_lineheader(gs, line, lid);
-    if (err) {
-        gingko_err(api, "build_lineheader failed w/ %s(%d)\n",
-                   gingko_strerror(err), err);
-        goto out;
+    /* write to page and build lineheaders */
+    {
+        /* FIXME: in this version, we only allow write to the zero-th dfile */
+        struct page *p = get_page(gid->gs, 0);
+
+        if (IS_ERR(p)) {
+            err = PTR_ERR(p);
+            gingko_err(api, "get_page() failed w/ %s(%d)\n",
+                       gingko_strerror(err), err);
+            goto out;
+        }
+
+        xrwlock_wlock(&p->lock);
+        err = page_write(p, line, lid, gid->gs);
+        xrwlock_wunlock(&p->lock);
+        
+        put_page(p);
     }
-    */
-    
+
 out:
     return err;
 }

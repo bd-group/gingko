@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-21 11:28:40 macan>
+ * Time-stamp: <2013-11-24 17:15:11 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,20 +44,31 @@ struct su_meta
     u8 version;
     u8 flags;
     int dfnr;
+#define SU_NAME_LEN             32
     char *name;
+};
+
+struct su_conf
+{
+#define SU_PAGE_SIZE                    (128 * 1024)
+#define SU_PAGE_SIZE_MAX                (64 * 1024 * 1024)
+    int page_size;
+    int page_algo;
 };
 
 struct gingko_su
 {
-    atomic_t ref;
-
+    struct su_conf conf;
     char *path;
+    
     struct dfile *files;
     struct su_meta sm;
 
     struct hlist_node hlist;    /* linked into hash table */
 
     long last_lid;
+
+    atomic_t ref;
 
     /* schema tree from all dfiles */
     struct field_t *root;

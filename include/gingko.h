@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-21 11:04:15 macan>
+ * Time-stamp: <2013-11-23 21:23:28 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -64,10 +64,12 @@ extern u32 gingko_api_tracing_flags;
 /* Init and fina a gingko environment */
 #define GINGKO_MAX_SUID                 102400
 #define GINGKO_GSRH_SIZE                2048
+#define GINGKO_PCRH_SIZE                (1024 * 1024) /* 64GB? */
 struct gingko_conf
 {
     int max_suid;
     int gsrh_size;
+    int pcrh_size;
 };
 
 int gingko_init(struct gingko_conf *);
@@ -80,7 +82,8 @@ int su_open(char *supath, int mode);
 struct field *su_getschema(int suid);
 
 /* Create a SU */
-int su_create(char *supath, struct field schemas[], int schlen);
+int su_create(struct su_conf *sc, char *supath, struct field schemas[], 
+              int schlen);
 
 /* Build a line */
 int su_linepack(struct line *line, struct field_2pack *flds[], int l1fldnr);

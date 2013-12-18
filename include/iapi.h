@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-20 16:40:52 macan>
+ * Time-stamp: <2013-11-24 10:58:58 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,8 @@
 
 #ifndef __IAPI_H__
 #define __IAPI_H__
+
+extern struct gingko_manager g_mgr;
 
 /* APIs */
 int df_read_meta(struct gingko_su *gs, struct dfile *df);
@@ -47,5 +49,9 @@ struct field_t *alloc_field_t(int type);
 int linepack_primitive(struct line *line, void *data, int dlen);
 int linepack_string(struct line *line, void *data, int dlen);
 int linepack_complex(struct line *line, struct field_2pack *fld);
+int build_lineheaders(struct gingko_su *gs, struct line *line, long lid);
+
+struct gingko_conf;
+int pagecache_init(struct gingko_conf *conf);
 
 #endif

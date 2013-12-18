@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-21 13:20:42 macan>
+ * Time-stamp: <2013-11-23 21:24:30 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
         goto out;
     }
     
-    suidw = su_create("./first_su", schemas, 7);
+    suidw = su_create(NULL, "./first_su", schemas, 7);
     if (suidw < 0) {
         printf("su_create() failed w/ %d\n", suidw);
         err = suidw;
@@ -152,8 +152,14 @@ int main(int argc, char *argv[])
 
         memset(&l, 0, sizeof(l));
         su_linepack(&l, flds, 4);
-    }
 
+        err = su_write(suidw, &l, 0);
+        if (err) {
+            printf("su_write(%d) failed w/ %s\n", suidw, gingko_strerror(err));
+            goto out;
+        }
+    }
+    
     su_close(suidw);
     su_close(suidr);
 

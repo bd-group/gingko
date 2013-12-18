@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-10-27 08:46:19 macan>
+ * Time-stamp: <2013-11-24 21:00:17 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,9 +40,18 @@ struct pageheader
 
 struct page 
 {
+    char *suname;
+    int dfid;
+    
+    atomic_t ref;
+
+    struct hlist_node hlist;
     struct pageheader ph;
     struct pageindex *pi;
     void *data;
+
+    xrwlock_t rwlock;           /* synchronize on read/write */
+    u64 coff;                   /* current write offset */
 };
 
 #endif

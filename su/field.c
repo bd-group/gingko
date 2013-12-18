@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-21 11:08:43 macan>
+ * Time-stamp: <2013-11-24 21:24:21 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -248,15 +248,23 @@ out_free:
     goto out;
 }
 
-int build_lineheaders(struct gingko_su *gs, struct line *line, long lid)
+int build_lineheaders(struct gingko_su *gs, struct line *line, long lid,
+                      u64 coff)
 {
-    int err = 0;
+    int err = 0, i;
 
     /* calculate l1flds and split by dfiles */
     int l1fld[gs->sm.dfnr];
 
     memset(l1fld, 0, sizeof(l1fld));
-    
+    for (i = 0; i < gs->sm.dfnr; i++) {
+        l1fld[i] = gs->files[i].dfh->md.l1fldnr;
+    }
+
+    /* for each dfile, calculate l1 field offset */
+    for (i = 0; i < gs->sm.dfnr; i++) {
+        
+    }
     
     return err;
 }

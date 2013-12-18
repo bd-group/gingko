@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-17 16:37:33 macan>
+ * Time-stamp: <2013-11-24 11:02:13 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -371,16 +371,21 @@ int init_dfile(struct gingko_su *gs, struct field schemas[], int schelen,
         goto out_free;
     }
 
-out_free:
-    xfree(df->dfh);
-
 out:
     return err;
+out_free:
+    xfree(df->dfh);
+    goto out;
 }
 
 void fina_dfile(struct dfile *df)
 {
     int j = 0;
+
+    /* FIXME: free L2P array */
+    if (df->dfh->l2p.ph.nr > 0) {
+        xfree(df->dfh->l2p.ph.l2pa);
+    }
     
     if (df->fds) {
         for (j = 0; j < SU_PER_DFILE_MAX; j++) {

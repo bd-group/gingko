@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-12 14:20:38 macan>
+ * Time-stamp: <2013-11-24 10:55:00 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -60,6 +60,8 @@ struct l2p_header
 
 struct l2p_entry
 {
+#define L2P_LID_MAX             0xffffffffffffffff
+#define L2P_PGOFF_MAX           0xffffffffffffffff
     u64 lid;
     u64 pgoff;
 };
@@ -83,6 +85,8 @@ struct df_header
 struct dfile 
 {
     struct df_header *dfh;
+
+    xrwlock_t rwlock;           /* protect page allocation */
 
     /* region for files' fds */
     int *fds;                   /* SU_PER_DFILE_MAX */
