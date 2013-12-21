@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-24 11:02:13 macan>
+ * Time-stamp: <2013-12-20 15:22:39 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -384,7 +384,7 @@ void fina_dfile(struct dfile *df)
 
     /* FIXME: free L2P array */
     if (df->dfh->l2p.ph.nr > 0) {
-        xfree(df->dfh->l2p.ph.l2pa);
+        xfree(df->dfh->l2p.l2pa);
     }
     
     if (df->fds) {

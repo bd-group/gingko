@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-24 10:58:58 macan>
+ * Time-stamp: <2013-12-21 22:08:18 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -49,9 +49,16 @@ struct field_t *alloc_field_t(int type);
 int linepack_primitive(struct line *line, void *data, int dlen);
 int linepack_string(struct line *line, void *data, int dlen);
 int linepack_complex(struct line *line, struct field_2pack *fld);
-int build_lineheaders(struct gingko_su *gs, struct line *line, long lid);
+int build_lineheaders(struct gingko_su *gs, struct line *line, long lid,
+                      u64 coff);
+void dump_lineheader(long lid, struct line *line);
 
 struct gingko_conf;
 int pagecache_init(struct gingko_conf *conf);
+
+struct page *get_page(struct gingko_su *gs, int dfid);
+int page_write(struct page *p, struct line *line, long lid, 
+               struct gingko_su *gs);
+void put_page(struct page *p);
 
 #endif

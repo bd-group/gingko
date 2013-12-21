@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-24 21:22:18 macan>
+ * Time-stamp: <2013-12-21 20:53:41 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -60,7 +60,7 @@ static inline int __calc_pcrh_slot(char *suname, int dfid)
     char fstr[SU_NAME_LEN + 32];
     int len = sprintf(fstr, "%s%d", suname, dfid);
     
-    return RSHash(fstr, len);
+    return RSHash(fstr, len) % gpc.pcsize;
 }
 
 static inline void __page_get(struct page *p)
@@ -138,7 +138,7 @@ int __pcrh_insert(struct page *p)
 
 void __pcrh_remove(struct page *p)
 {
-    int idx = __calc_pcrh_slot(p->suname);
+    int idx = __calc_pcrh_slot(p->suname, p->dfid);
     struct regular_hash *rh;
 
     rh = gpc.pcrh + idx;
@@ -150,6 +150,7 @@ void __pcrh_remove(struct page *p)
 struct page *__alloc_page(struct gingko_su *gs, int dfid)
 {
     struct page *p;
+    int err = 0;
 
     p = xzalloc(sizeof(*p));
     if (!p) {
@@ -230,7 +231,7 @@ struct page *get_page(struct gingko_su *gs, int dfid)
         /* hoo, we need alloc a new page and init it */
         p = __alloc_page(gs, dfid);
         if (IS_ERR(p)) {
-            gingko_err(su, "__alloc_page() failed w/ %s(%d)\n",
+            gingko_err(su, "__alloc_page() failed w/ %s(%ld)\n",
                        gingko_strerror(PTR_ERR(p)), PTR_ERR(p));
             p = NULL;
             goto out;
@@ -238,13 +239,13 @@ struct page *get_page(struct gingko_su *gs, int dfid)
     }
     
     /* the page->ref has already inc-ed */
-
+out:
     return p;
 }
 
 void put_page(struct page *p)
 {
-    __put_page(p);
+    __page_put(p);
 }
 
 void __free_page(struct page *p)
@@ -283,17 +284,17 @@ int page_write(struct page *p, struct line *line, long lid,
     }
 
     /* copy line data to page data, record current offset */
-    memcpy(p->data + p->coff, line->data, line->dlen);
+    memcpy(p->data + p->coff, line->data, line->len);
 
     /* build lineheader */
-    err = build_lineheaders(gid->gs, line, lid, p->coff);
+    err = build_lineheaders(gs, line, lid, p->coff);
     if (err) {
-        gingko_err(api, "build_lineheader failed w/ %s(%d)\n",
+        gingko_err(su, "build_lineheader failed w/ %s(%d)\n",
                    gingko_strerror(err), err);
         goto out;
     }
 
-    p->coff += line->dlen;
+    p->coff += line->len;
 
 out:
     return err;

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-24 21:24:21 macan>
+ * Time-stamp: <2013-12-21 22:07:42 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -251,7 +251,7 @@ out_free:
 int build_lineheaders(struct gingko_su *gs, struct line *line, long lid,
                       u64 coff)
 {
-    int err = 0, i;
+    int err = 0, i, j, k = 1;
 
     /* calculate l1flds and split by dfiles */
     int l1fld[gs->sm.dfnr];
@@ -261,12 +261,42 @@ int build_lineheaders(struct gingko_su *gs, struct line *line, long lid,
         l1fld[i] = gs->files[i].dfh->md.l1fldnr;
     }
 
-    /* for each dfile, calculate l1 field offset */
+    /* for each dfile, re-calculate l1 field offset */
     for (i = 0; i < gs->sm.dfnr; i++) {
-        
+        for (j = 0; j < l1fld[i]; j++) {
+            line->lh[j + 1].offset += coff;
+        }
+    }
+
+    /* set the fldid by parse schemas */
+    for (i = 0; i < gs->sm.dfnr; i++) {
+        for (j = 0; j < gs->files[i].dfh->md.fldnr; j++) {
+            if (gs->files[i].dfh->schemas[j].pid == FLD_MAX_PID) {
+                line->lh[k++].l1fld = gs->files[i].dfh->schemas[j].id;
+            }
+        }
     }
     
     return err;
+}
+
+void dump_lineheader(long lid, struct line *line)
+{
+    struct lineheader0 *lh0;
+    int i;
+
+    if (!line->lh) {
+        gingko_info(su, "Invalid line header for line %p\n", line);
+        return;
+    }
+    lh0 = (struct lineheader0 *)&line->lh[0];
+    gingko_info(su, "Line %ld %p\t LH0: %d l1flds llen %u\n", 
+                lid, line, lh0->len, lh0->llen);
+    for (i = 0; i < lh0->len; i++) {
+        gingko_info(su, "Line %ld %p\t LH%d: l1fld %d poffset %u\n",
+                    lid, line, i + 1, 
+                    line->lh[i + 1].l1fld, line->lh[i + 1].offset);
+    }
 }
 
 int linepack_primitive(struct line *line, void *data, int dlen)
@@ -284,7 +314,9 @@ int linepack_primitive(struct line *line, void *data, int dlen)
 
     /* data is in *data, not in the pointer */ 
     memcpy(line->data + line->len, &data, dlen);
-    gingko_debug(su, "PACK data %ld len %d\n", (u64)data, dlen);
+    gingko_debug(su, "PACK data %ld len %d off %d\n", (u64)data, dlen,
+                 line->len);
+    line->len += dlen;
     
 out:
     return err;

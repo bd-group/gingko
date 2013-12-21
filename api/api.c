@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-24 21:33:28 macan>
+ * Time-stamp: <2013-12-21 22:06:55 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -753,11 +753,14 @@ struct field_2pack **su_l1fieldpack(struct field_2pack **fld, int *fldnr,
  */
 int su_linepack(struct line *line, struct field_2pack *flds[], int l1fldnr)
 {
+    struct lineheader0 *lh0;
     int err = 0, i;
     void *x;
 
     if (!line || !flds)
         return -EINVAL;
+
+    memset(line, 0, sizeof(*line));
 
     x = xzalloc((l1fldnr + 1) * sizeof(struct lineheader));
     if (!x) {
@@ -767,12 +770,12 @@ int su_linepack(struct line *line, struct field_2pack *flds[], int l1fldnr)
         goto out;
     }
     line->lh = x;
-    line->lh[0].l1fld = l1fldnr;
-    line->lh[0].len = l1fldnr;
-    
-    memset(line, 0, sizeof(*line));
+    lh0 = (struct lineheader0 *)&line->lh[0];
+    lh0->l1fld = 0;
+    lh0->len = l1fldnr;
 
     for (i = 0; i < l1fldnr; i++) {
+        line->lh[i + 1].offset = line->len;
         switch (flds[i]->type) {
         case GINGKO_INT8:
             err = linepack_primitive(line, flds[i]->data, 1);
@@ -803,6 +806,7 @@ int su_linepack(struct line *line, struct field_2pack *flds[], int l1fldnr)
             goto out;
         }
     }
+    lh0->llen = line->len;
 
 out:
     return err;
@@ -827,7 +831,7 @@ int su_write(int suid, struct line *line, long lid)
         goto out;
     }
 
-    if (lid != gid->gs->last_lid) {
+    if (lid != gid->gs->last_lid + 1 && lid != 0) {
         gingko_err(api, "Invalid line ID %ld but expect %ld.\n",
                    lid, gid->gs->last_lid);
         err = -EINVAL;
@@ -846,12 +850,18 @@ int su_write(int suid, struct line *line, long lid)
             goto out;
         }
 
-        xrwlock_wlock(&p->lock);
+        xrwlock_wlock(&p->rwlock);
         err = page_write(p, line, lid, gid->gs);
-        xrwlock_wunlock(&p->lock);
+        xrwlock_wunlock(&p->rwlock);
+
+        /* dump line headers */
+        dump_lineheader(lid, line);
         
         put_page(p);
     }
+
+    /* update last written line id */
+    gid->gs->last_lid = lid;
 
 out:
     return err;

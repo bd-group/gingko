@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-23 21:24:30 macan>
+ * Time-stamp: <2013-12-21 22:03:43 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -154,6 +154,12 @@ int main(int argc, char *argv[])
         su_linepack(&l, flds, 4);
 
         err = su_write(suidw, &l, 0);
+        if (err) {
+            printf("su_write(%d) failed w/ %s\n", suidw, gingko_strerror(err));
+            goto out;
+        }
+
+        err = su_write(suidw, &l, 1);
         if (err) {
             printf("su_write(%d) failed w/ %s\n", suidw, gingko_strerror(err));
             goto out;
