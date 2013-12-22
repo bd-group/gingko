@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-21 22:06:55 macan>
+ * Time-stamp: <2013-12-22 21:40:54 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -856,6 +856,7 @@ int su_write(int suid, struct line *line, long lid)
 
         /* dump line headers */
         dump_lineheader(lid, line);
+        dump_page(p);
         
         put_page(p);
     }

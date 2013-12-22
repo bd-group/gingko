@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-21 22:08:18 macan>
+ * Time-stamp: <2013-12-22 21:39:31 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,10 +55,23 @@ void dump_lineheader(long lid, struct line *line);
 
 struct gingko_conf;
 int pagecache_init(struct gingko_conf *conf);
+void __pcrh_remove(struct page *p);
+int __pcrh_insert(struct page *p);
+struct page *__pcrh_lookup(char *suname, int dfid);
+struct page *get_page(struct gingko_su *gs, int dfid);
+void put_page(struct page *p);
 
 struct page *get_page(struct gingko_su *gs, int dfid);
 int page_write(struct page *p, struct line *line, long lid, 
                struct gingko_su *gs);
 void put_page(struct page *p);
+void dump_page(struct page *p);
+
+struct page *__alloc_page(struct gingko_su *gs, int dfid);
+void __free_page(struct page *p);
+
+int build_pageindex(struct page *p, struct line *line, long lid,
+                    struct gingko_su *gs);
+void dump_pageindex(struct pageindex *pi);
 
 #endif

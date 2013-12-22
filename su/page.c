@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-21 20:53:41 macan>
+ * Time-stamp: <2013-12-22 21:40:18 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,128 +23,16 @@
 
 #include "gingko.h"
 
-struct page_cache
-{
-    xlock_t lock;               /* lock to protect hash table */
-    int pcsize;                 /* page cache hash table size */
-    struct regular_hash *pcrh;
-};
-
-static struct page_cache gpc;
-
-int pagecache_init(struct gingko_conf *conf)
-{
-    int err = 0, i;
-
-    memset(&gpc, 0, sizeof(gpc));
-
-    xlock_init(&gpc.lock);
-    gpc.pcsize = conf->pcrh_size;
-    gpc.pcrh = xzalloc(sizeof(*gpc.pcrh) * gpc.pcsize);
-    if (!gpc.pcrh) {
-        gingko_err(api, "xzalloc(%d * PCRH) failed\n", gpc.pcsize);
-        err = -ENOMEM;
-        goto out;
-    }
-    for (i = 0; i < gpc.pcsize; i++) {
-        INIT_HLIST_HEAD(&gpc.pcrh[i].h);
-        xlock_init(&gpc.pcrh[i].lock);
-    }
-    
-out:
-    return err;
-}
-
-static inline int __calc_pcrh_slot(char *suname, int dfid)
-{
-    char fstr[SU_NAME_LEN + 32];
-    int len = sprintf(fstr, "%s%d", suname, dfid);
-    
-    return RSHash(fstr, len) % gpc.pcsize;
-}
-
 static inline void __page_get(struct page *p)
 {
     atomic_inc(&p->ref);
 }
-
-void __free_page(struct page *p);
 
 static inline void __page_put(struct page *p)
 {
     if (atomic_dec_return(&p->ref) < 0) {
         __free_page(p);
     }
-}
-
-struct page *__pcrh_lookup(char *suname, int dfid)
-{
-    int idx = __calc_pcrh_slot(suname, dfid);
-    int found = 0;
-    struct hlist_node *pos;
-    struct regular_hash *rh;
-    struct page *p;
-
-    rh = gpc.pcrh + idx;
-    xlock_lock(&rh->lock);
-    hlist_for_each_entry(p, pos, &rh->h, hlist) {
-        if (strncmp(p->suname, suname, SU_NAME_LEN) == 0 &&
-            p->dfid == dfid) {
-            /* ok, found it */
-            found = 1;
-            __page_get(p);
-            break;
-        }
-    }
-    xlock_unlock(&rh->lock);
-    if (!found) {
-        p = NULL;
-    }
-
-    return p;
-}
-
-/* Return value:
- *  0 => inserted
- *  1 => not inserted
- */
-int __pcrh_insert(struct page *p)
-{
-    int idx = __calc_pcrh_slot(p->suname, p->dfid);
-    int found = 0;
-    struct regular_hash *rh;
-    struct hlist_node *pos;
-    struct page *tpos;
-
-    rh = gpc.pcrh + idx;
-    xlock_lock(&rh->lock);
-    hlist_for_each_entry(tpos, pos, &rh->h, hlist) {
-        if (strncmp(tpos->suname, p->suname, SU_NAME_LEN) == 0 &&
-            tpos->dfid == p->dfid) {
-            /* this means we have found the same page in hash table, do NOT
-             * insert it */
-            found = 1;
-            break;
-        }
-    }
-    if (!found) {
-        /* ok, insert it to hash table */
-        hlist_add_head(&p->hlist, &rh->h);
-    }
-    xlock_unlock(&rh->lock);
-
-    return found;
-}
-
-void __pcrh_remove(struct page *p)
-{
-    int idx = __calc_pcrh_slot(p->suname, p->dfid);
-    struct regular_hash *rh;
-
-    rh = gpc.pcrh + idx;
-    xlock_lock(&rh->lock);
-    hlist_del_init(&p->hlist);
-    xlock_unlock(&rh->lock);
 }
 
 struct page *__alloc_page(struct gingko_su *gs, int dfid)
@@ -155,6 +43,13 @@ struct page *__alloc_page(struct gingko_su *gs, int dfid)
     p = xzalloc(sizeof(*p));
     if (!p) {
         gingko_err(su, "xzalloc() PAGE failed, no memory.\n");
+        return ERR_PTR(-ENOMEM);
+    }
+
+    p->pi = xzalloc(sizeof(*p->pi));
+    if (!p->pi) {
+        gingko_err(su, "xzalloc() PageIndex failed, no memory.\n");
+        xfree(p);
         return ERR_PTR(-ENOMEM);
     }
 
@@ -178,9 +73,11 @@ struct page *__alloc_page(struct gingko_su *gs, int dfid)
         }
         gs->files[dfid].dfh->l2p.l2pa = le;
         le[gs->files[dfid].dfh->l2p.ph.nr].lid = L2P_LID_MAX;
-        le[gs->files[dfid].dfh->l2p.ph.nr].lid = L2P_PGOFF_MAX;
+        le[gs->files[dfid].dfh->l2p.ph.nr].pgoff = L2P_PGOFF_MAX;
         gs->files[dfid].dfh->l2p.ph.nr++;
     }
+
+    p->ph.flag = gs->conf.page_algo;
 
     /* insert it to page cache */
     __page_get(p);
@@ -219,35 +116,6 @@ out_free:
     goto out;
 }
 
-/* Get a page, alloc a new one if need
- */
-struct page *get_page(struct gingko_su *gs, int dfid)
-{
-    struct page *p = ERR_PTR(-ENOENT);
-
-    /* lookup in the page cache */
-    p = __pcrh_lookup(gs->sm.name, dfid);
-    if (!p) {
-        /* hoo, we need alloc a new page and init it */
-        p = __alloc_page(gs, dfid);
-        if (IS_ERR(p)) {
-            gingko_err(su, "__alloc_page() failed w/ %s(%ld)\n",
-                       gingko_strerror(PTR_ERR(p)), PTR_ERR(p));
-            p = NULL;
-            goto out;
-        }
-    }
-    
-    /* the page->ref has already inc-ed */
-out:
-    return p;
-}
-
-void put_page(struct page *p)
-{
-    __page_put(p);
-}
-
 void __free_page(struct page *p)
 {
     if (!p)
@@ -260,6 +128,21 @@ void __free_page(struct page *p)
     }
 
     /* TODO: free any resource */
+    if (!hlist_unhashed(&p->hlist)) {
+        __pcrh_remove(p);
+    }
+
+    xfree(p);
+}
+
+void dump_page(struct page *p)
+{
+    gingko_info(su, "Page %p %s dfid %d ref %d ph.flag %d\n",
+                p, p->suname, p->dfid,
+                atomic_read(&p->ref),
+                p->ph.flag);
+    if (p->pi)
+        dump_pageindex(p->pi);
 }
 
 /* Write a line to page, just append the data to page's data region, only
@@ -294,9 +177,28 @@ int page_write(struct page *p, struct line *line, long lid,
         goto out;
     }
 
+    /* MUST at last: update page index */
+    err = build_pageindex(p, line, lid, gs);
+    if (err) {
+        gingko_err(su, "build_pageindex failed w/ %s(%d)\n",
+                   gingko_strerror(err), err);
+        goto out;
+    }
+
     p->coff += line->len;
 
 out:
     return err;
 }
 
+/* Sync a page to storage device, do compress if need, do pre-write
+ * operations, do post-write operations after successfully written.
+ *
+ * Caution: this function must be called with write lock
+ */
+int page_sync(struct page *p, struct gingko_su *gs)
+{
+    int err = 0;
+
+    return err;
+}

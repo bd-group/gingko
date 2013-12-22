@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-21 22:03:43 macan>
+ * Time-stamp: <2013-12-22 21:33:34 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,6 +55,7 @@ int main(int argc, char *argv[])
 
     gingko_api_tracing_flags = 0xffffffff;
     gingko_su_tracing_flags = 0xffffffff;
+    gingko_index_tracing_flags = 0xffffffff;
     
     err = gingko_init(NULL);
     if (err) {
