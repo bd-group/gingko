@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 16:22:55 macan>
+ * Time-stamp: <2013-12-24 22:32:00 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -158,22 +158,40 @@ int main(int argc, char *argv[])
         memset(&l, 0, sizeof(l));
         su_linepack(&l, flds, 4);
 
+        printf("Write Data Line 0 ...\n");
         err = su_write(suidw, &l, 0);
         if (err) {
             printf("su_write(%d) failed w/ %s\n", suidw, gingko_strerror(err));
             goto out;
         }
 
+        printf("Write Data Line 1 ...\n");
         err = su_write(suidw, &l, 1);
         if (err) {
             printf("su_write(%d) failed w/ %s\n", suidw, gingko_strerror(err));
             goto out;
         }
-    }
-    err = su_sync(suidw);
-    if (err) {
-        printf("su_sync(%d) failed w/ %s\n", suidw, gingko_strerror(err));
-        goto out;
+
+        printf("Sync Page 0 ...\n");
+        err = su_sync(suidw);
+        if (err) {
+            printf("su_sync(%d) failed w/ %s\n", suidw, gingko_strerror(err));
+            goto out;
+        }
+
+        printf("Write Data Line 2 ...\n");
+        err = su_write(suidw, &l, 2);
+        if (err) {
+            printf("su_write(%d) failed w/ %s\n", suidw, gingko_strerror(err));
+            goto out;
+        }
+
+        printf("Sync Page 1 ...\n");
+        err = su_sync(suidw);
+        if (err) {
+            printf("su_sync(%d) failed w/ %s\n", suidw, gingko_strerror(err));
+            goto out;
+        }
     }
     
     su_close(suidw);

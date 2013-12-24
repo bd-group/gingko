@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 18:38:44 macan>
+ * Time-stamp: <2013-12-24 22:29:59 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -201,7 +201,11 @@ int page_write(struct page *p, struct line *line, long lid,
     }
 
     p->coff += line->len;
-    p->ph.status = SU_PH_DIRTY;
+    if (p->ph.status == SU_PH_CLEAN) {
+        gs->files[p->dfid].dfh->l2p.l2pa[
+            gs->files[p->dfid].dfh->l2p.ph.nr - 1].lid = lid;
+        p->ph.status = SU_PH_DIRTY;
+    }
 
 out:
     return err;
@@ -274,10 +278,9 @@ static inline char *__get_algo(struct page *p)
 }
 
 int __write_page(struct gingko_su *gs, struct dfile *df, struct page *p,
-                 void *zdata)
+                 void *zdata, off_t *pgoff)
 {
     char path[4096];
-    off_t pgoff;
     int err = 0, bl, bw, zlen;
 
     /* get df fd now */
@@ -294,8 +297,8 @@ int __write_page(struct gingko_su *gs, struct dfile *df, struct page *p,
     }
 
     /* Step 0: get current pgoff */
-    pgoff = lseek(df->fds[SU_DFILE_ID], 0, SEEK_END);
-    if (pgoff == (off_t)-1) {
+    *pgoff = lseek(df->fds[SU_DFILE_ID], 0, SEEK_END);
+    if (*pgoff == (off_t)-1) {
         gingko_err(su, "lseek() failed w/ %s(%d)\n",
                    strerror(errno), errno);
         err = -errno;
@@ -303,8 +306,7 @@ int __write_page(struct gingko_su *gs, struct dfile *df, struct page *p,
         df->fds[SU_DFILE_ID] = 0;
         goto out_unlock;
     }
-    p->pgoff = pgoff;
-    gingko_debug(su, "Got page %p offset %ld\n", p, p->pgoff);
+    gingko_debug(su, "Got page %p offset %ld\n", p, *pgoff);
     
     /* Step 1: write the page header to DFILE */
     bl = 0;
@@ -352,7 +354,8 @@ out_unlock:
  */
 int page_sync(struct page *p, struct gingko_su *gs)
 {
-    void *zdata;
+    void *zdata = NULL;
+    off_t pgoff;
     int err = 0;
 
     switch (p->ph.status) {
@@ -375,7 +378,12 @@ int page_sync(struct page *p, struct gingko_su *gs)
     /* do pre-compress operations */
     p->ph.orig_len = p->coff;
     p->ph.crc32 = crc32c(0, p->data, p->coff);
-    zdata = alloca(p->coff);
+    zdata = xmalloc(p->coff);
+    if (!zdata) {
+        gingko_err(su, "xmalloc zdata buffer failed, no memory.\n");
+        err = -ENOMEM;
+        goto out_err;
+    }
 
     /* do compress */
     switch (p->ph.flag) {
@@ -403,7 +411,7 @@ int page_sync(struct page *p, struct gingko_su *gs)
 
     /* do pre-write operations */
     /* do write */
-    err = __write_page(gs, &gs->files[p->dfid], p, zdata);
+    err = __write_page(gs, &gs->files[p->dfid], p, zdata, &pgoff);
     if (err) {
         gingko_err(su, "__write_page(%p) failed w/ %s(%d)\n",
                    p, gingko_strerror(err), err);
@@ -412,10 +420,23 @@ int page_sync(struct page *p, struct gingko_su *gs)
     
     /* do post-write operations */
     /* TODO: update page's pgoff, remove it from hash table */
+    if (!hlist_unhashed(&p->hlist)) {
+        __pcrh_remove(p);
+    }
+    p->pgoff = pgoff;
+    err = __pcrh_insert(p);
+    if (err) {
+        GINGKO_BUGON("Page cache conflicts?!");
+    }
+    gs->files[p->dfid].dfh->l2p.l2pa[
+        gs->files[p->dfid].dfh->l2p.ph.nr - 1].pgoff = p->pgoff;
 
+out:
+    xfree(zdata);
+    
     return err;
 
 out_err:
     p->ph.status = SU_PH_DIRTY;
-    return err;
+    goto out;
 }
