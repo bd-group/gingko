@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-17 16:03:23 macan>
+ * Time-stamp: <2013-12-24 14:38:27 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@
 #define ERDONLY         1027
 #define EINTERNAL       1028
 #define ECONFLICT       1029
+#define ESTATUS         1030
 
 #define IS_ERR_VALUE(x) unlikely((x) >= (unsigned long)-MAX_ERRNO)
 
@@ -76,6 +77,8 @@ static char __UNUSED__ *gingko_strerror(int err)
             return "Internal Error";
         case ECONFLICT:
             return "Conflict With Other";
+        case ESTATUS:
+            return "Object Status Error";
         default:
             err = -err;
             goto other;

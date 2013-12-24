@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-20 15:22:39 macan>
+ * Time-stamp: <2013-12-24 18:21:33 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,11 +26,11 @@
 int df_read_meta(struct gingko_su *gs, struct dfile *df)
 {
     char path[4096];
-    int br, bl = 0, err = 0, i;
+    int br, bl = 0, err = 0, i, fd;
 
     sprintf(path, "%s/%s", gs->path, SU_DFILE_FILENAME);
-    df->fds[SU_META_ID] = open(path, O_RDONLY);
-    if (df->fds[SU_META_ID] < 0) {
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
         gingko_err(su, "open(%s) failed w/ %s(%d)\n",
                    path, strerror(errno), errno);
         return -errno;
@@ -39,7 +39,7 @@ int df_read_meta(struct gingko_su *gs, struct dfile *df)
     /* read in the MD */
     bl = 0;
     do {
-        br = read(df->fds[SU_META_ID], (void *)&df->dfh->md + bl, 
+        br = read(fd, (void *)&df->dfh->md + bl, 
                   sizeof(df->dfh->md) - bl);
         if (br < 0) {
             gingko_err(su, "read %s failed w/ %s(%d)\n",
@@ -68,7 +68,7 @@ int df_read_meta(struct gingko_su *gs, struct dfile *df)
         
         bl = 0;
         do {
-            br = read(df->fds[SU_META_ID], (void *)&fdd + bl, 
+            br = read(fd, (void *)&fdd + bl, 
                       sizeof(fdd) - bl);
             if (br < 0) {
                 gingko_err(su, "read FDD from %s failed w/ %s(%d)\n",
@@ -96,7 +96,7 @@ int df_read_meta(struct gingko_su *gs, struct dfile *df)
         }
         bl = 0;
         do {
-            br = read(df->fds[SU_META_ID], name + bl, fdd.namelen - bl);
+            br = read(fd, name + bl, fdd.namelen - bl);
             if (br < 0) {
                 gingko_err(su, "read field name from %s failed w/ %s(%d)\n",
                            path, strerror(errno), errno);
@@ -173,12 +173,23 @@ int df_write_meta(struct gingko_su *gs, struct dfile *df, int write_schema)
     char path[4096];
     int err = 0, bw, bl;
 
-    sprintf(path, "%s/%s", gs->path, SU_DFILE_FILENAME);
-    df->fds[SU_DFILE_ID] = open(path, O_RDWR | O_CREAT, 
-                                S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-    if (df->fds[SU_DFILE_ID] < 0) {
-        gingko_err(su, "open(%s) failed w/ %s(%d)\n",
+    if (df->fds[SU_DFILE_ID] == 0) {
+        sprintf(path, "%s/%s", gs->path, SU_DFILE_FILENAME);
+        df->fds[SU_DFILE_ID] = open(path, O_RDWR | O_CREAT, 
+                                    S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+        if (df->fds[SU_DFILE_ID] < 0) {
+            gingko_err(su, "open(%s) failed w/ %s(%d)\n",
+                       path, strerror(errno), errno);
+            err = -errno;
+            goto out;
+        }
+    }
+
+    if (lseek(df->fds[SU_DFILE_ID], 0, SEEK_SET) == (off_t)-1) {
+        gingko_err(su, "lseek(%s) on df failed w/ %s(%d)\n",
                    path, strerror(errno), errno);
+        close(df->fds[SU_DFILE_ID]);
+        df->fds[SU_DFILE_ID] = 0;
         err = -errno;
         goto out;
     }
@@ -319,6 +330,9 @@ int init_dfile(struct gingko_su *gs, struct field schemas[], int schelen,
 {
     int err = 0, i, l1fldnr = 0;
     
+    xrwlock_init(&df->rwlock);
+    xlock_init(&df->lock);
+
     /* alloc and init a dfile header */
     df->dfh = xzalloc(sizeof(*df->dfh));
     if (!df->dfh) {

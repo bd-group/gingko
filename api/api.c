@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-22 21:40:54 macan>
+ * Time-stamp: <2013-12-24 18:07:10 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -237,6 +237,7 @@ struct gingko_suid *__alloc_su(struct gingko_manager *gm, int flag)
     if (found) {
         INIT_HLIST_NODE(&gs->hlist);
         atomic_set(&gs->ref, 0);
+        xlock_init(&gs->lock);
         /* init the ROOT of schema tree */
         {
             struct field_t *root;
@@ -313,8 +314,28 @@ void __free_su(struct gingko_su *gs)
 
 static int __su_sync(struct gingko_su *gs)
 {
-    int err = 0;
+    int err = 0, i;
 
+    /* for each dfile, we should find the page */
+    for (i = 0; i < gs->sm.dfnr; i++) {
+        struct page *p = get_page(gs, i, SU_PG_MAX_PGOFF);
+
+        if (IS_ERR(p)) {
+            err = PTR_ERR(p);
+            gingko_warning(api, "get_page() DF %d failed w/ %s(%d)\n",
+                           i, gingko_strerror(err), err);
+        } else {
+            xrwlock_wlock(&p->rwlock);
+            err = page_sync(p, gs);
+            xrwlock_wunlock(&p->rwlock);
+            if (err) {
+                gingko_err(api, "page_sync() DF %d failed w/ %s(%d)\n",
+                           i, gingko_strerror(err), err);
+                goto out;
+            }
+        }
+    }
+out:
     return err;
 }
 
@@ -331,16 +352,21 @@ void __recycle_su_fd(struct gingko_su *gs)
     }
     
     /* then, close the files */
-    close(gs->smfd);
-    gs->smfd = 0;
-
+    if (!xlock_trylock(&gs->lock)) {
+        close(gs->smfd);
+        gs->smfd = 0;
+        xlock_unlock(&gs->lock);
+    }
+    
     for (i = 0; i < gs->sm.dfnr; i++) {
+        xlock_lock(&gs->files[i].lock);
         for (j = 0; j < SU_PER_DFILE_MAX; j++) {
             if (gs->files[i].fds[j] != 0) {
                 close(gs->files[i].fds[j]);
                 gs->files[i].fds[j] = 0;
             }
         }
+        xlock_unlock(&gs->files[i].lock);
     }
     gingko_info(api, "Recycle fds from SU %s, done.", gs->sm.name);
     
@@ -348,10 +374,16 @@ out:
     return;
 }
 
+static inline void __update_su_conf(struct gingko_su *gs, struct su_conf *sc)
+{
+    if (!sc)
+        gs->conf = *sc;
+}
+
 /* Open a SU, return SUID (>=0)
  * On error, return (<0)
  */
-int su_open(char *supath, int mode) 
+int su_open(char *supath, int mode, void *arg) 
 {
     struct gingko_suid *gid = NULL;
     struct gingko_su *gs = NULL;
@@ -428,6 +460,9 @@ int su_open(char *supath, int mode)
             gid->gs = other;
             gingko_debug(api, "Reuse SU %p idx %d\n", gid->gs, suid);
             err = suid;
+            /* finally, we got the SU, update su_conf if we will do write */
+            if (mode == SU_OPEN_APPEND)
+                __update_su_conf(gs, arg);
             goto out;
         }
     }
@@ -529,6 +564,9 @@ retry:
     /* ok, we have build the GS, return the suid now */
     gingko_debug(api, "Allocate SU %p idx %d\n", gs, suid);
     err = suid;
+    /* finally, we got the SU, update su_conf if we will do write */
+    if (mode == SU_OPEN_APPEND)
+        __update_su_conf(gs, arg);
     
 out:
     return err;
@@ -841,7 +879,7 @@ int su_write(int suid, struct line *line, long lid)
     /* write to page and build lineheaders */
     {
         /* FIXME: in this version, we only allow write to the zero-th dfile */
-        struct page *p = get_page(gid->gs, 0);
+        struct page *p = get_page(gid->gs, 0, SU_PG_MAX_PGOFF);
 
         if (IS_ERR(p)) {
             err = PTR_ERR(p);
@@ -850,9 +888,17 @@ int su_write(int suid, struct line *line, long lid)
             goto out;
         }
 
-        xrwlock_wlock(&p->rwlock);
-        err = page_write(p, line, lid, gid->gs);
-        xrwlock_wunlock(&p->rwlock);
+        do {
+            xrwlock_wlock(&p->rwlock);
+            err = page_write(p, line, lid, gid->gs);
+            xrwlock_wunlock(&p->rwlock);
+            if (err && err != -EAGAIN) {
+                gingko_err(api, "page_write() failed w/ %s(%d)\n",
+                           gingko_strerror(err), err);
+                goto out;
+            }
+            sched_yield();
+        } while (err);
 
         /* dump line headers */
         dump_lineheader(lid, line);

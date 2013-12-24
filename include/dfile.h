@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-24 10:55:00 macan>
+ * Time-stamp: <2013-12-24 18:03:54 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -87,6 +87,7 @@ struct dfile
     struct df_header *dfh;
 
     xrwlock_t rwlock;           /* protect page allocation */
+    xlock_t lock;               /* protect fds */
 
     /* region for files' fds */
     int *fds;                   /* SU_PER_DFILE_MAX */

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-23 21:23:28 macan>
+ * Time-stamp: <2013-12-24 16:15:45 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -76,7 +76,7 @@ int gingko_init(struct gingko_conf *);
 int gingko_fina(void);
 
 /* Open a SU, return SUID */
-int su_open(char *supath, int mode);
+int su_open(char *supath, int mode, void *arg);
 
 /* Get schema info from SU, should open SU firstly */
 struct field *su_getschema(int suid);

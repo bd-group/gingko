@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-22 21:33:34 macan>
+ * Time-stamp: <2013-12-24 16:22:55 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,6 +36,10 @@ void __dump_f2p(struct field_2pack **fld, int fldnr)
 int main(int argc, char *argv[])
 {
     int err = 0, suidr, suidw;
+    struct su_conf sc = {
+        .page_size = SU_PAGE_SIZE,
+        .page_algo = SU_PH_COMP_LZO,
+    };
     struct field schemas[7] = {
         {.name = "field1", .id = 0, .pid = FLD_MAX_PID, .type = GINGKO_INT64, 
          .codec = FLD_CODEC_NONE, .cidnr = 0},
@@ -63,7 +67,7 @@ int main(int argc, char *argv[])
         goto out;
     }
     
-    suidw = su_create(NULL, "./first_su", schemas, 7);
+    suidw = su_create(&sc, "./first_su", schemas, 7);
     if (suidw < 0) {
         printf("su_create() failed w/ %d\n", suidw);
         err = suidw;
@@ -71,7 +75,7 @@ int main(int argc, char *argv[])
     }
     printf("Create SU id=%d\n", suidw);
 
-    suidr = su_open("./first_su", SU_OPEN_RDONLY);
+    suidr = su_open("./first_su", SU_OPEN_RDONLY, NULL);
     if (suidr < 0) {
         printf("su_open() failedd w/ %d\n", suidr);
         err = suidr;
@@ -165,6 +169,11 @@ int main(int argc, char *argv[])
             printf("su_write(%d) failed w/ %s\n", suidw, gingko_strerror(err));
             goto out;
         }
+    }
+    err = su_sync(suidw);
+    if (err) {
+        printf("su_sync(%d) failed w/ %s\n", suidw, gingko_strerror(err));
+        goto out;
     }
     
     su_close(suidw);

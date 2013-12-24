@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-22 21:09:54 macan>
+ * Time-stamp: <2013-12-24 15:03:53 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,10 +55,10 @@ out:
     return err;
 }
 
-static inline int __calc_pcrh_slot(char *suname, int dfid)
+static inline int __calc_pcrh_slot(char *suname, int dfid, u64 pgoff)
 {
     char fstr[SU_NAME_LEN + 32];
-    int len = sprintf(fstr, "%s%d", suname, dfid);
+    int len = sprintf(fstr, "%s%d%lx", suname, dfid, pgoff);
     
     return RSHash(fstr, len) % gpc.pcsize;
 }
@@ -77,9 +77,9 @@ static inline void __page_put(struct page *p)
     }
 }
 
-struct page *__pcrh_lookup(char *suname, int dfid)
+struct page *__pcrh_lookup(char *suname, int dfid, u64 pgoff)
 {
-    int idx = __calc_pcrh_slot(suname, dfid);
+    int idx = __calc_pcrh_slot(suname, dfid, pgoff);
     int found = 0;
     struct hlist_node *pos;
     struct regular_hash *rh;
@@ -89,7 +89,7 @@ struct page *__pcrh_lookup(char *suname, int dfid)
     xlock_lock(&rh->lock);
     hlist_for_each_entry(p, pos, &rh->h, hlist) {
         if (strncmp(p->suname, suname, SU_NAME_LEN) == 0 &&
-            p->dfid == dfid) {
+            p->dfid == dfid && p->pgoff == pgoff) {
             /* ok, found it */
             found = 1;
             __page_get(p);
@@ -110,7 +110,7 @@ struct page *__pcrh_lookup(char *suname, int dfid)
  */
 int __pcrh_insert(struct page *p)
 {
-    int idx = __calc_pcrh_slot(p->suname, p->dfid);
+    int idx = __calc_pcrh_slot(p->suname, p->dfid, p->pgoff);
     int found = 0;
     struct regular_hash *rh;
     struct hlist_node *pos;
@@ -120,7 +120,7 @@ int __pcrh_insert(struct page *p)
     xlock_lock(&rh->lock);
     hlist_for_each_entry(tpos, pos, &rh->h, hlist) {
         if (strncmp(tpos->suname, p->suname, SU_NAME_LEN) == 0 &&
-            tpos->dfid == p->dfid) {
+            tpos->dfid == p->dfid && tpos->pgoff == p->pgoff) {
             /* this means we have found the same page in hash table, do NOT
              * insert it */
             found = 1;
@@ -138,7 +138,7 @@ int __pcrh_insert(struct page *p)
 
 void __pcrh_remove(struct page *p)
 {
-    int idx = __calc_pcrh_slot(p->suname, p->dfid);
+    int idx = __calc_pcrh_slot(p->suname, p->dfid, p->pgoff);
     struct regular_hash *rh;
 
     rh = gpc.pcrh + idx;
@@ -149,12 +149,12 @@ void __pcrh_remove(struct page *p)
 
 /* Get a page, alloc a new one if need
  */
-struct page *get_page(struct gingko_su *gs, int dfid)
+struct page *get_page(struct gingko_su *gs, int dfid, u64 pgoff)
 {
     struct page *p = ERR_PTR(-ENOENT);
 
     /* lookup in the page cache */
-    p = __pcrh_lookup(gs->sm.name, dfid);
+    p = __pcrh_lookup(gs->sm.name, dfid, pgoff);
     if (!p) {
         /* hoo, we need alloc a new page and init it */
         p = __alloc_page(gs, dfid);

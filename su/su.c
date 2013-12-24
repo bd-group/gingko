@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-12 14:16:09 macan>
+ * Time-stamp: <2013-12-24 17:55:47 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,11 +31,13 @@ int su_read_meta(struct gingko_su *gs)
 {
     char path[4096];
     struct su_meta_d smd;
-    int br, bl = 0, err = 0;
+    int br, bl = 0, err = 0, smfd;
 
+    /* We know that at this moment, nobody can conflict with us. So, just set
+     * smfd here! */
     sprintf(path, "%s/%s", gs->path, SU_META_FILENAME);
-    gs->smfd = open(path, O_RDONLY);
-    if (gs->smfd < 0) {
+    smfd = open(path, O_RDONLY);
+    if (smfd < 0) {
         gingko_err(su, "open(%s) failed w/ %s(%d)\n",
                    path, strerror(errno), errno);
         return -errno;
@@ -43,7 +45,7 @@ int su_read_meta(struct gingko_su *gs)
 
     bl = 0;
     do {
-        br = read(gs->smfd, (void *)&smd + bl, sizeof(smd) - bl);
+        br = read(smfd, (void *)&smd + bl, sizeof(smd) - bl);
         if (br < 0) {
             gingko_err(su, "read %s failed w/ %s(%d)\n",
                        path, strerror(errno), errno);
@@ -71,7 +73,7 @@ int su_read_meta(struct gingko_su *gs)
         
         bl = 0;
         do {
-            br = read(gs->smfd, gs->sm.name + bl, smd.namelen - bl);
+            br = read(smfd, gs->sm.name + bl, smd.namelen - bl);
             if (br < 0) {
                 gingko_err(su, "read %s name failed w/ %s(%d)\n",
                            path, strerror(errno), errno);

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-24 21:00:17 macan>
+ * Time-stamp: <2013-12-24 18:26:52 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,7 +32,12 @@ struct pageheader
 #define SU_PH_COMP_SNAPPY       1
 #define SU_PH_COMP_LZO          2
 #define SU_PH_COMP_ZLIB         3
-    u32 flag;
+    u16 flag;
+#define SU_PH_CLEAN             0
+#define SU_PH_DIRTY             1
+#define SU_PH_WB                2
+#define SU_PH_WBDONE            3
+    u16 status;
     u32 orig_len;
     u32 zip_len;
     u32 crc32;
@@ -49,6 +54,9 @@ struct page
     struct pageheader ph;
     struct pageindex *pi;
     void *data;
+#define SU_PG_MAX_PGOFF         0xffffffffffffffff
+    u64 pgoff;                  /* offset in dfile, can by used as unique
+                                 * identity in one dfile */
 
     xrwlock_t rwlock;           /* synchronize on read/write */
     u64 coff;                   /* current write offset */

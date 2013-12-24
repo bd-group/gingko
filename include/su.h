@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-24 17:15:11 macan>
+ * Time-stamp: <2013-12-24 17:40:36 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,6 +74,7 @@ struct gingko_su
     struct field_t *root;
     
     /* region for files' fd */
+    xlock_t lock;               /* lock to protect fd update */
     int smfd;
 };
 
