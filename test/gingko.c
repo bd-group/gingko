@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 22:32:00 macan>
+ * Time-stamp: <2013-12-25 23:56:00 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,40 +33,14 @@ void __dump_f2p(struct field_2pack **fld, int fldnr)
     }
 }
 
-int main(int argc, char *argv[])
+int __do_write(struct field *schemas, char *supath)
 {
-    int err = 0, suidr, suidw;
+    int err = 0, suidw;
     struct su_conf sc = {
         .page_size = SU_PAGE_SIZE,
         .page_algo = SU_PH_COMP_LZO,
     };
-    struct field schemas[7] = {
-        {.name = "field1", .id = 0, .pid = FLD_MAX_PID, .type = GINGKO_INT64, 
-         .codec = FLD_CODEC_NONE, .cidnr = 0},
-        {.name = "field2", .id = 1, .pid = FLD_MAX_PID, .type = GINGKO_DOUBLE,
-         .codec = FLD_CODEC_NONE, .cidnr = 0},
-        {.name = "field3", .id = 2, .pid = FLD_MAX_PID, .type = GINGKO_ARRAY,
-         .codec = FLD_CODEC_NONE, .cidnr = 0},
-        {.name = "field4", .id = 3, .pid = 2, .type = GINGKO_INT32,
-         .codec = FLD_CODEC_NONE, .cidnr = 0},
-        {.name = "field5", .id = 4, .pid = FLD_MAX_PID, .type = GINGKO_STRUCT,
-         .codec = FLD_CODEC_NONE, .cidnr = 0},
-        {.name = "field6", .id = 5, .pid = 4, .type = GINGKO_INT64,
-         .codec = FLD_CODEC_NONE, .cidnr = 0},
-        {.name = "field7", .id = 6, .pid = 4, .type = GINGKO_DOUBLE,
-         .codec = FLD_CODEC_NONE, .cidnr = 0},
-    };
 
-    gingko_api_tracing_flags = 0xffffffff;
-    gingko_su_tracing_flags = 0xffffffff;
-    gingko_index_tracing_flags = 0xffffffff;
-    
-    err = gingko_init(NULL);
-    if (err) {
-        printf("gingko_init() failed w/ %d\n", err);
-        goto out;
-    }
-    
     suidw = su_create(&sc, "./first_su", schemas, 7);
     if (suidw < 0) {
         printf("su_create() failed w/ %d\n", suidw);
@@ -74,14 +48,6 @@ int main(int argc, char *argv[])
         goto out;
     }
     printf("Create SU id=%d\n", suidw);
-
-    suidr = su_open("./first_su", SU_OPEN_RDONLY, NULL);
-    if (suidr < 0) {
-        printf("su_open() failedd w/ %d\n", suidr);
-        err = suidr;
-        goto out;
-    }
-    printf("Open   SU id=%d\n", suidr);
 
     /* pack a data line */
     {
@@ -193,9 +159,71 @@ int main(int argc, char *argv[])
             goto out;
         }
     }
-    
     su_close(suidw);
+
+out:
+    return err;
+}
+
+int __do_read(char *supath)
+{
+    int err = 0, suidr;
+
+    suidr = su_open("./first_su", SU_OPEN_RDONLY, NULL);
+    if (suidr < 0) {
+        printf("su_open() failedd w/ %d\n", suidr);
+        err = suidr;
+        goto out;
+    }
+    printf("Open   SU id=%d\n", suidr);
+    
     su_close(suidr);
+out:
+    return err;
+}
+
+int main(int argc, char *argv[])
+{
+    int err = 0;
+    struct field schemas[7] = {
+        {.name = "field1", .id = 0, .pid = FLD_MAX_PID, .type = GINGKO_INT64, 
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field2", .id = 1, .pid = FLD_MAX_PID, .type = GINGKO_DOUBLE,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field3", .id = 2, .pid = FLD_MAX_PID, .type = GINGKO_ARRAY,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field4", .id = 3, .pid = 2, .type = GINGKO_INT32,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field5", .id = 4, .pid = FLD_MAX_PID, .type = GINGKO_STRUCT,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field6", .id = 5, .pid = 4, .type = GINGKO_INT64,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field7", .id = 6, .pid = 4, .type = GINGKO_DOUBLE,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+    };
+
+    gingko_api_tracing_flags = 0xffffffff;
+    gingko_su_tracing_flags = 0xffffffff;
+    gingko_index_tracing_flags = 0xffffffff;
+    
+    err = gingko_init(NULL);
+    if (err) {
+        printf("gingko_init() failed w/ %d\n", err);
+        goto out;
+    }
+    if (argc > 1) {
+        err = __do_write(schemas, "./first_su");
+        if (err) {
+            printf("__do_write() failed w/ %d\n", err);
+            goto out;
+        }
+    }
+
+    err = __do_read("./first_su");
+    if (err) {
+        printf("__do_read() failed w/ %d\n", err);
+        goto out;
+    }
 
 out:
     return err;

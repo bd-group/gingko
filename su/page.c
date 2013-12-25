@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 22:29:59 macan>
+ * Time-stamp: <2013-12-25 23:54:51 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -204,6 +204,7 @@ int page_write(struct page *p, struct line *line, long lid,
     if (p->ph.status == SU_PH_CLEAN) {
         gs->files[p->dfid].dfh->l2p.l2pa[
             gs->files[p->dfid].dfh->l2p.ph.nr - 1].lid = lid;
+        gingko_err(su, "SET lid %ld @ %d\n", lid, gs->files[p->dfid].dfh->l2p.ph.nr - 1);
         p->ph.status = SU_PH_DIRTY;
     }
 
@@ -430,6 +431,12 @@ int page_sync(struct page *p, struct gingko_su *gs)
     }
     gs->files[p->dfid].dfh->l2p.l2pa[
         gs->files[p->dfid].dfh->l2p.ph.nr - 1].pgoff = p->pgoff;
+
+    err = df_append_l2p(gs, &gs->files[p->dfid]);
+    if (err) {
+        gingko_warning(su, "df_append_l2p() failed w/ %s(%d)\n",
+                       gingko_strerror(err), err);
+    }
 
 out:
     xfree(zdata);

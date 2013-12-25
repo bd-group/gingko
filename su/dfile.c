@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 18:21:33 macan>
+ * Time-stamp: <2013-12-26 00:00:44 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -153,8 +153,8 @@ int df_read_meta(struct gingko_su *gs, struct dfile *df)
                      df->dfh->schemas[i].codec,
                      df->dfh->schemas[i].cidnr);
     }
-
 out:
+    close(fd);
     return err;
 
 out_free:
@@ -269,14 +269,16 @@ int df_write_l2p(struct gingko_su *gs, struct dfile *df)
     char path[4096];
     int err = 0, bw, bl;
 
-    sprintf(path, "%s/%s", gs->path, SU_L2P_FILENAME);
-    df->fds[SU_L2P_ID] = open(path, O_RDWR | O_CREAT, 
-                              S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-    if (df->fds[SU_L2P_ID] < 0) {
-        gingko_err(su, "open(%s) failed w/ %s(%d)\n",
-                   path, strerror(errno), errno);
-        err = -errno;
-        goto out;
+    if (df->fds[SU_L2P_ID] == 0) {
+        sprintf(path, "%s/%s", gs->path, SU_L2P_FILENAME);
+        df->fds[SU_L2P_ID] = open(path, O_RDWR | O_CREAT, 
+                                  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+        if (df->fds[SU_L2P_ID] < 0) {
+            gingko_err(su, "open(%s) failed w/ %s(%d)\n",
+                       path, strerror(errno), errno);
+            err = -errno;
+            goto out;
+        }
     }
 
     /* ok, write pi l2p header to disk */
@@ -299,9 +301,153 @@ out:
     return err;
 }
 
-int df_append_l2p(struct gingko_su *gs, struct l2p_entry *e)
+int df_read_l2p(struct gingko_su *gs, struct dfile *df)
 {
-    return 0;
+    char path[4096];
+    void *l2pa = NULL;
+    int br, bl = 0, err = 0, fd, dlen;
+
+    sprintf(path, "%s/%s", gs->path, SU_L2P_FILENAME);
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        gingko_err(su, "open(%s) failed w/ %s(%d)\n",
+                   path, strerror(errno), errno);
+        err = -errno;
+        goto out;
+    }
+
+    /* read in the l2p header */
+    bl = 0;
+    do {
+        br = read(fd, (void *)&df->dfh->l2p.ph + bl,
+                  sizeof(df->dfh->l2p.ph) - bl);
+        if (br < 0) {
+            gingko_err(su, "read %s failed w/ %s(%d)\n",
+                       path, strerror(errno), errno);
+            err = -errno;
+            goto out_close;
+        } else if (br == 0) {
+            gingko_err(su, "read DFH L2P PH EOF\n");
+            err = -EBADF;
+            goto out_close;
+        }
+        bl += br;
+    } while (bl < sizeof(df->dfh->l2p.ph));
+
+    dlen = sizeof(struct l2p_entry) * df->dfh->l2p.ph.nr;
+    l2pa = xmalloc(dlen);
+    if (!l2pa) {
+        gingko_err(su, "xmalloc() %d l2p entry.\n",
+                   df->dfh->l2p.ph.nr);
+        err = -ENOMEM;
+        goto out_close;
+    }
+    
+    /* read in the l2p entries */
+    bl = 0;
+    do {
+        br = read(fd, l2pa + bl, dlen - bl);
+        if (br < 0) {
+            gingko_err(su, "read %s failed w/ %s(%d)\n",
+                       path, strerror(errno), errno);
+            err = -errno;
+            goto out_free;
+        } else if (br == 0) {
+            gingko_err(su, "read DFH L2P ARRAY EOF\n");
+            err = -EBADF;
+            goto out_free;
+        }
+        bl += br;
+    } while (bl < dlen);
+
+    df->dfh->l2p.ph.rnr = df->dfh->l2p.ph.nr;
+    df->dfh->l2p.l2pa = l2pa;
+
+    {
+        int i;
+        
+        gingko_debug(su, "Read df %p (nr %u rnr %u)\n",
+                     df, df->dfh->l2p.ph.nr, df->dfh->l2p.ph.rnr);
+        for (i = 0; i < df->dfh->l2p.ph.nr; i++) {
+            gingko_debug(su, " L2P Entry %5d lid %ld -> pgoff %lu\n",
+                         i, df->dfh->l2p.l2pa[i].lid,
+                         df->dfh->l2p.l2pa[i].pgoff);
+        }
+    }
+
+out_close:
+    close(fd);
+out:
+    return err;
+out_free:
+    xfree(l2pa);
+    goto out_close;
+}
+
+int df_append_l2p(struct gingko_su *gs, struct dfile *df)
+{
+    char path[4096];
+    int err = 0, bl, bw, wnr;
+
+    /* get df fd now */
+    xlock_lock(&df->lock);
+    if (df->fds[SU_L2P_ID] == 0) {
+        sprintf(path, "%s/%s", gs->path, SU_L2P_FILENAME);
+        df->fds[SU_L2P_ID] = open(path, O_RDWR);
+        if (df->fds[SU_L2P_ID] < 0) {
+            gingko_err(su, "open(%s) failed w/ %s(%d)\n",
+                       path, strerror(errno), errno);
+            err = -errno;
+            goto out_unlock;
+        }
+    }
+
+    wnr = df->dfh->l2p.ph.nr - df->dfh->l2p.ph.rnr;
+    bl = 0;
+    do {
+        bw = pwrite(df->fds[SU_L2P_ID], 
+                    (void *)(df->dfh->l2p.l2pa + df->dfh->l2p.ph.rnr) + bl,
+                    wnr * sizeof(struct l2p_entry) - bl,
+                    (df->dfh->l2p.ph.rnr + 1) * sizeof(struct l2p_entry) + bl);
+        if (bw < 0) {
+            gingko_err(su, "write l2p array failed w/ %s(%d)\n",
+                       strerror(errno), errno);
+            err = -errno;
+            goto out_unlock;
+        }
+        bl += bw;
+    } while (bl < wnr * sizeof(struct l2p_entry));
+    df->dfh->l2p.ph.rnr = df->dfh->l2p.ph.nr;
+
+    bl = 0;
+    do {
+        bw = pwrite(df->fds[SU_L2P_ID], (void *)&df->dfh->l2p.ph + bl,
+                    sizeof(df->dfh->l2p.ph) - bl, bl);
+        if (bw < 0) {
+            gingko_err(su, "write l2p header failed w/ %s(%d)\n",
+                       strerror(errno), errno);
+            err = -errno;
+            goto out_unlock;
+        }
+        bl += bw;
+    } while (bl < sizeof(df->dfh->l2p.ph));
+
+    {
+        int i;
+        
+        gingko_debug(su, "Write df %p (nr %u rnr %u)\n",
+                     df, df->dfh->l2p.ph.nr, df->dfh->l2p.ph.rnr);
+        for (i = 0; i < df->dfh->l2p.ph.nr; i++) {
+            gingko_debug(su, " L2P Entry %5d lid %ld -> pgoff %lu\n",
+                         i, df->dfh->l2p.l2pa[i].lid,
+                         df->dfh->l2p.l2pa[i].pgoff);
+        }
+    }
+
+out_unlock:
+    xlock_unlock(&df->lock);
+    
+    return err;
 }
 
 int alloc_dfile(struct dfile *df)

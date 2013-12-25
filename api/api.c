@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 18:07:10 macan>
+ * Time-stamp: <2013-12-25 23:36:56 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -530,6 +530,13 @@ int su_open(char *supath, int mode, void *arg)
             }
         default:
             break;
+        }
+
+        err = df_read_l2p(gs, &gs->files[i]);
+        if (err) {
+            gingko_err(api, "df_read_l2p failed w/ %s(%d)\n",
+                       gingko_strerror(err), err);
+            goto out_free;
         }
     }
 

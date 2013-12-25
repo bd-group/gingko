@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 18:03:54 macan>
+ * Time-stamp: <2013-12-25 16:33:46 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,6 +56,8 @@ struct df_meta
 struct l2p_header
 {
     u32 nr;                     /* # of l2p entries*/
+    u32 rnr;                    /* # of l2p entries last read from disk */
+    u32 pad[2];
 };
 
 struct l2p_entry
