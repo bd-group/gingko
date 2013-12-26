@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 15:03:53 macan>
+ * Time-stamp: <2013-12-26 15:44:52 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -157,7 +157,7 @@ struct page *get_page(struct gingko_su *gs, int dfid, u64 pgoff)
     p = __pcrh_lookup(gs->sm.name, dfid, pgoff);
     if (!p) {
         /* hoo, we need alloc a new page and init it */
-        p = __alloc_page(gs, dfid);
+        p = __alloc_page(gs, dfid, SU_PAGE_ALLOC_ADDL2P);
         if (IS_ERR(p)) {
             gingko_err(su, "__alloc_page() failed w/ %s(%ld)\n",
                        gingko_strerror(PTR_ERR(p)), PTR_ERR(p));

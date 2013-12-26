@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-25 23:56:00 macan>
+ * Time-stamp: <2013-12-26 19:41:09 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -167,7 +167,7 @@ out:
 
 int __do_read(char *supath)
 {
-    int err = 0, suidr;
+    int err = 0, suidr, i;
 
     suidr = su_open("./first_su", SU_OPEN_RDONLY, NULL);
     if (suidr < 0) {
@@ -176,7 +176,16 @@ int __do_read(char *supath)
         goto out;
     }
     printf("Open   SU id=%d\n", suidr);
-    
+
+    for (i = 0; i < 3; i++) {
+        err = su_get(suidr, i, NULL);
+        if (err) {
+            printf("su_get() failed w/ %d\n", err);
+            goto out_close;
+        }
+    }
+
+out_close:
     su_close(suidr);
 out:
     return err;

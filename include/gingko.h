@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 16:15:45 macan>
+ * Time-stamp: <2013-12-26 19:38:49 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -134,9 +134,9 @@ struct optree
 
 int su_scan(char *supath, struct range *r, struct optree *opt);
 
-int su_get(char *supath, long lid, char *fields[]);
+int su_get(int suid, long lid, char *fields[]);
 
-int su_mget(char *supath, long lids[], char *fields[]);
+int su_mget(int suid, long lids[], char *fields[]);
 
 /* Index exploiting */
 

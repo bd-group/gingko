@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-25 23:54:51 macan>
+ * Time-stamp: <2013-12-26 23:53:36 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@ static inline void __page_put(struct page *p)
     }
 }
 
-struct page *__alloc_page(struct gingko_su *gs, int dfid)
+struct page *__alloc_page(struct gingko_su *gs, int dfid, int flags)
 {
     struct page *p;
     int err = 0;
@@ -62,7 +62,7 @@ struct page *__alloc_page(struct gingko_su *gs, int dfid)
     xrwlock_init(&p->rwlock);
     
     /* TODO: init the page meta data */
-    {
+    if (flags & SU_PAGE_ALLOC_ADDL2P) {
         /* init df_header's l2p array */
         struct l2p_entry *le;
 
@@ -133,6 +133,7 @@ void __free_page(struct page *p)
     if (!hlist_unhashed(&p->hlist)) {
         __pcrh_remove(p);
     }
+    xfree(p->data);
 
     xfree(p);
 }
@@ -165,8 +166,10 @@ int page_write(struct page *p, struct line *line, long lid,
         break;
     case SU_PH_WB:
     case SU_PH_WBDONE:
-    default:
         return -EAGAIN;
+        break;
+    default:
+        return -ESTATUS;
         break;
     }
     
@@ -201,6 +204,7 @@ int page_write(struct page *p, struct line *line, long lid,
     }
 
     p->coff += line->len;
+
     if (p->ph.status == SU_PH_CLEAN) {
         gs->files[p->dfid].dfh->l2p.l2pa[
             gs->files[p->dfid].dfh->l2p.ph.nr - 1].lid = lid;
@@ -210,6 +214,195 @@ int page_write(struct page *p, struct line *line, long lid,
 
 out:
     return err;
+}
+
+int __page_decomp_snappy(struct page *p, struct gingko_su *gs, void *zdata)
+{
+    int err = 0;
+
+    return err;
+}
+
+int __page_decomp_lzo(struct page *p, struct gingko_su *gs, void *zdata)
+{
+    void *data = NULL;
+    lzo_uint outlen;
+    int err = 0;
+
+    data = xmalloc(p->ph.orig_len);
+    if (!data) {
+        gingko_err(su, "xmalloc() original buffer failed, no memory.\n");
+        err = -ENOMEM;
+        goto out;
+    }
+
+    err = lzo1x_decompress(zdata, p->ph.zip_len, data, &outlen, NULL);
+    if (err == LZO_E_OK && outlen == p->ph.orig_len) {
+        err = 0;
+    } else {
+        gingko_err(su, "LZO decompress failed w/ %d\n", err);
+        xfree(data);
+        err = -EINTERNAL;
+        goto out;
+    }
+    p->data = data;
+    xfree(zdata);
+    
+out:
+    return err;
+}
+
+int __page_decomp_zlib(struct page *p, struct gingko_su *gs, void *zdata)
+{
+    int err = 0;
+
+    return err;
+}
+
+/* Read a page to page cache
+ *
+ * Caution: we should own the lock at begining
+ */
+struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff)
+{
+    char path[4096];
+    struct page *p;
+    struct dfile *df;
+    void *data;
+    int err = 0, bl, br;
+
+    df = &gs->files[dfid];
+    p = __alloc_page(gs, dfid, 0);
+    if (IS_ERR(p)) {
+        err = PTR_ERR(p);
+        gingko_err(su, "__alloc_page() for pgoff 0x%lx failed w/ %s(%d)\n",
+                   pgoff, gingko_strerror(err), err);
+        return p;
+    }
+
+    /* get df fd now */
+    xlock_lock(&df->lock);
+    if (df->fds[SU_DFILE_ID] == 0) {
+        sprintf(path, "%s/%s", gs->path, SU_DFILE_FILENAME);
+        df->fds[SU_DFILE_ID] = open(path, O_RDWR);
+        if (df->fds[SU_DFILE_ID] < 0) {
+            gingko_err(su, "open(%s) failed w/ %s(%d)\n",
+                       path, strerror(errno), errno);
+            err = -errno;
+            goto out_unlock;
+        }
+    }
+
+    /* Step 1: read the page header from DFILE */
+    bl = 0;
+    do {
+        br = pread(df->fds[SU_DFILE_ID], (void *)&p->ph + bl,
+                   sizeof(p->ph) - bl,
+                   pgoff + bl);
+        if (br < 0) {
+            gingko_err(su, "pread page header failed w/ %s(%d)\n",
+                      strerror(errno), errno);
+            err = -errno;
+            goto out_unlock;
+        } else if (br == 0) {
+            gingko_err(su, "pread page header EOF\n");
+            err = -EBADF;
+            goto out_unlock;
+        }
+        bl += br;
+    } while (bl < sizeof(p->ph));
+    
+    /* Step 2: read the page data */
+    data = xmalloc(p->ph.zip_len);
+    if (!data) {
+        gingko_err(su, "xmalloc() page data buffer failed, no memory.\n");
+        err = -ENOMEM;
+        goto out_unlock;
+    }
+    bl = 0;
+    do {
+        br = pread(df->fds[SU_DFILE_ID], data + bl,
+                   p->ph.zip_len - bl, pgoff + sizeof(p->ph) + bl);
+        if (br < 0) {
+            gingko_err(su, "pread page data failed w/ %s(%d)\n",
+                       strerror(errno), errno);
+            err = -errno;
+            xfree(data);
+            goto out_unlock;
+        } else if (br == 0) {
+            gingko_err(su, "pread page data EOF\n");
+            err = -EBADF;
+            xfree(data);
+            goto out_unlock;
+        }
+        bl += br;
+    } while (bl < p->ph.zip_len);
+
+    /* Step 3: unzip if compressed */
+    switch (p->ph.flag) {
+    case SU_PH_COMP_NONE:
+        p->data = data;
+        break;
+    case SU_PH_COMP_SNAPPY:
+        err = __page_decomp_snappy(p, gs, data);
+        break;
+    case SU_PH_COMP_LZO:
+        err = __page_decomp_lzo(p, gs, data);
+        break;
+    case SU_PH_COMP_ZLIB:
+        err = __page_decomp_zlib(p, gs, data);
+        break;
+    default:
+        gingko_err(su, "Invalid page header flag 0x%x\n", p->ph.flag);
+        err = -EINVAL;
+        xfree(data);
+        goto out_unlock;
+    }
+    if (err) {
+        gingko_err(su, "__page_decomp_* failed w/ %s(%d)\n",
+                   gingko_strerror(err), err);
+        xfree(data);
+        goto out_unlock;
+    }
+
+    /* Step 4: insert into page cache */
+    p->pgoff = pgoff;
+    __page_get(p);
+retry:
+    switch (__pcrh_insert(p)) {
+    case 0:
+        /* inserted, it is ok */
+        break;
+    case 1:
+    {
+        /* this means someone has already allocated this page, return that
+         * page */
+        struct page *other;
+
+        other = __pcrh_lookup(p->suname, p->dfid, p->pgoff);
+        if (!other) {
+            goto retry;
+        }
+        __page_put(p);
+        __page_put(p);          /* double put as free */
+        p = other;
+        break;
+    }
+    default:
+        err = -EINTERNAL;
+    }
+
+
+out_unlock:
+    xlock_unlock(&df->lock);
+
+    if (err) {
+        __page_put(p);
+        __page_put(p);          /* double put as free */
+        p = ERR_PTR(err);
+    }
+
+    return p;
 }
 
 int __page_comp_snappy(struct page *p, struct gingko_su *gs, void *zdata)
@@ -357,7 +550,7 @@ int page_sync(struct page *p, struct gingko_su *gs)
 {
     void *zdata = NULL;
     off_t pgoff;
-    int err = 0;
+    int err = 0, i;
 
     switch (p->ph.status) {
     case SU_PH_CLEAN:
@@ -377,8 +570,18 @@ int page_sync(struct page *p, struct gingko_su *gs)
     }
 
     /* do pre-compress operations */
+    p->ph.lnr = p->pi->linenr;
+    p->ph.lhoff = p->coff;
+    for (i = 0; i < p->ph.lnr; i++) {
+        memcpy(p->data + p->coff, p->pi->lharray[i], 
+               (gs->files[p->dfid].dfh->md.l1fldnr + 1) * 
+               sizeof(struct lineheader));
+        p->coff += (gs->files[p->dfid].dfh->md.l1fldnr + 1) * 
+            sizeof(struct lineheader);
+    }
     p->ph.orig_len = p->coff;
     p->ph.crc32 = crc32c(0, p->data, p->coff);
+
     zdata = xmalloc(p->coff);
     if (!zdata) {
         gingko_err(su, "xmalloc zdata buffer failed, no memory.\n");
@@ -406,9 +609,11 @@ int page_sync(struct page *p, struct gingko_su *gs)
         goto out_err;
     }
     /* do post-compress operations */
-    gingko_info(su, "ZIP(%s) page data from %uB to %uB, CRC 0x%x.\n",
+    gingko_info(su, "ZIP(%s) page data from %uB to %uB, CRC 0x%x LHoff "
+                "%uB lnr %d.\n",
                 __get_algo(p),
-                p->ph.orig_len, p->ph.zip_len, p->ph.crc32);
+                p->ph.orig_len, p->ph.zip_len, p->ph.crc32,
+                p->ph.lhoff, p->ph.lnr);
 
     /* do pre-write operations */
     /* do write */

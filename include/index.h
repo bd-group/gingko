@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-22 21:30:05 macan>
+ * Time-stamp: <2013-12-26 23:41:16 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -107,7 +107,8 @@ struct pageindex
     u32 startline;
     u32 linenr;
     u32 fldstatlen;
-    struct fldstat *stats[];
+    struct fldstat **stats;
+    struct lineheader **lharray;
 };
 
 #ifdef GINGKO_TRACING

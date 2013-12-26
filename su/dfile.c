@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 00:00:44 macan>
+ * Time-stamp: <2013-12-26 19:47:12 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -448,6 +448,33 @@ out_unlock:
     xlock_unlock(&df->lock);
     
     return err;
+}
+
+u64 __l2p_lookup_pgoff(struct gingko_su *gs, struct dfile *df, long lid)
+{
+    u64 pgoff = L2P_PGOFF_MAX;
+    int i;
+
+    for (i = 0; i < df->dfh->l2p.ph.nr; i++) {
+        if (lid < df->dfh->l2p.l2pa[i].lid) {
+            if (i - 1 >= 0) {
+                pgoff = df->dfh->l2p.l2pa[i - 1].pgoff;
+            } else {
+                gingko_warning(su, "L2P Array Internal Error: lid %ld "
+                               "this entry lid %lu\n",
+                               lid, df->dfh->l2p.l2pa[i].lid);
+                goto out;
+            }
+            break;
+        }
+    }
+    if (pgoff == L2P_PGOFF_MAX) {
+        /* try to find in the last page */
+        pgoff = df->dfh->l2p.l2pa[i - 1].pgoff;
+    }
+
+out:
+    return pgoff;
 }
 
 int alloc_dfile(struct dfile *df)

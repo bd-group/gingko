@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-22 21:32:23 macan>
+ * Time-stamp: <2013-12-26 23:40:08 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,18 +32,29 @@ void dump_pageindex(struct pageindex *pi)
 int build_pageindex(struct page *p, struct line *line, long lid,
                     struct gingko_su *gs)
 {
+    void *tmp;
     int err = 0;
 
     if (!p->pi)
         return -EINTERNAL;
 
-    if (!p->pi->linenr)
-        p->pi->startline = lid;
     p->pi->linenr++;
 
     /* FIXME: update fldstat array */
 
     /* FIXME: lineheaders are ready, save them now */
+    tmp = xrealloc(p->pi->lharray, p->pi->linenr * sizeof(struct lineheader *));
+    if (!tmp) {
+        gingko_err(index, "xrealloc() lineheaders array failed, no memory.\n");
+        p->pi->linenr--;
+        goto out;
+    }
+    p->pi->lharray = tmp;
+    p->pi->lharray[p->pi->linenr - 1] = line->lh;
 
+    if (!p->pi->linenr)
+        p->pi->startline = lid;
+
+out:
     return err;
 }

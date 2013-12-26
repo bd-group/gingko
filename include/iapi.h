@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 16:22:43 macan>
+ * Time-stamp: <2013-12-26 23:10:10 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,9 @@ extern struct gingko_manager g_mgr;
 int df_read_meta(struct gingko_su *gs, struct dfile *df);
 int df_write_meta(struct gingko_su *gs, struct dfile *df, int write_schema);
 int df_write_l2p(struct gingko_su *gs, struct dfile *df);
+int df_append_l2p(struct gingko_su *gs, struct dfile *df);
+int df_read_l2p(struct gingko_su *gs, struct dfile *df);
+u64 __l2p_lookup_pgoff(struct gingko_su *gs, struct dfile *df, long lid);
 
 int su_read_meta(struct gingko_su *gs);
 int su_write_meta(struct gingko_su *gs);
@@ -66,8 +69,10 @@ int page_write(struct page *p, struct line *line, long lid,
 void put_page(struct page *p);
 void dump_page(struct page *p);
 int page_sync(struct page *p, struct gingko_su *gs);
+struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff);
 
-struct page *__alloc_page(struct gingko_su *gs, int dfid);
+#define SU_PAGE_ALLOC_ADDL2P    0x01
+struct page *__alloc_page(struct gingko_su *gs, int dfid, int flags);
 void __free_page(struct page *p);
 
 int build_pageindex(struct page *p, struct line *line, long lid,

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 18:26:52 macan>
+ * Time-stamp: <2013-12-26 23:43:14 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,11 +28,14 @@
 
 struct pageheader 
 {
+#define SU_PH_ROW               0
+#define SU_PH_COLUMN            1
+    u8 mode;
 #define SU_PH_COMP_NONE         0
 #define SU_PH_COMP_SNAPPY       1
 #define SU_PH_COMP_LZO          2
 #define SU_PH_COMP_ZLIB         3
-    u16 flag;
+    u8 flag;
 #define SU_PH_CLEAN             0
 #define SU_PH_DIRTY             1
 #define SU_PH_WB                2
@@ -41,6 +44,9 @@ struct pageheader
     u32 orig_len;
     u32 zip_len;
     u32 crc32;
+
+    u32 lhoff;
+    u32 lnr;
 };
 
 struct page 

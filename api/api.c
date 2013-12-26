@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-25 23:36:56 macan>
+ * Time-stamp: <2013-12-26 23:05:00 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -962,6 +962,49 @@ int su_close(int suid)
                  gid->gs->sm.name, suid, atomic_read(&gid->gs->ref));
 
     __free_suid(gid);
+
+out:
+    return err;
+}
+
+/* Read a line from SU
+ */
+int su_get(int suid, long lid, char *fields[])
+{
+    struct gingko_suid *gid;
+    struct page *p;
+    u64 pgoff;
+    int err = 0, dfid = 0;      /* FIXME: DFID */
+
+    if (suid >= g_mgr.gc->max_suid) {
+        err = -EINVAL;
+        goto out;
+    }
+
+    gid = g_mgr.gsu + suid;
+
+    /* Step 1: find in l2p array for this lid */
+    pgoff = __l2p_lookup_pgoff(gid->gs, &gid->gs->files[dfid], lid);
+    if (pgoff == L2P_PGOFF_MAX) {
+        gingko_err(api, "Can not find this Line %ld\n", lid);
+        err = -ENODATAR;
+        goto out;
+    }
+    gingko_debug(api, "Get Line %ld -> Page off %lu\n", lid, pgoff);
+
+    /* Step 2: get or load the page */
+    p = __pcrh_lookup(gid->gs->sm.name, dfid, pgoff);
+    if (!p) {
+        p = page_load(gid->gs, dfid, pgoff);
+        if (IS_ERR(p)) {
+            err = PTR_ERR(p);
+            gingko_err(su, "page_load() failed w/ %s(%d)\n",
+                       gingko_strerror(err), err);
+            goto out;
+        }
+    }
+
+    /* Step 3: find lid in page */
 
 out:
     return err;
