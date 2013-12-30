@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 19:37:42 macan>
+ * Time-stamp: <2013-12-27 19:44:02 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,8 @@
 #define ECONFLICT       1029
 #define ESTATUS         1030
 #define ENODATAR        1031
+#define EBADSCHEMA      1032
+#define ENOTIMP         1033
 
 #define IS_ERR_VALUE(x) unlikely((x) >= (unsigned long)-MAX_ERRNO)
 
@@ -82,6 +84,10 @@ static char __UNUSED__ *gingko_strerror(int err)
             return "Object Status Error";
         case ENODATAR:
             return "No Such Data Record";
+        case EBADSCHEMA:
+            return "Bad Schema";
+        case ENOTIMP:
+            return "Not Implement Yet";
         default:
             err = -err;
             goto other;

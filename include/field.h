@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-11-20 23:08:25 macan>
+ * Time-stamp: <2013-12-31 00:46:45 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -77,7 +77,7 @@ struct l4b
     u8 data[0];
 };
 
-union string_t 
+union string_d
 {
     struct l1b l1;
     struct l2b l2;
@@ -87,7 +87,7 @@ union string_t
 
 /* len: record the # of array's elements
  */
-union array_t
+union array_d
 {
     struct l1b l1;
     struct l2b l2;
@@ -97,7 +97,7 @@ union array_t
 
 /* len: record the # of map's KV pairs
  */
-union map_t 
+union map_d
 {
     struct l1b l1;
     struct l2b l2;
@@ -105,11 +105,17 @@ union map_t
     struct l4b l4;
 };
 
-union struct_t 
+union struct_d
 {
     u8 nr; /* record the # of L1 fields */
     u8 data[0];
 };
+
+typedef struct __string_t
+{
+    u32 len;
+    char *str;
+} string_t;
 
 struct field
 {
@@ -157,6 +163,19 @@ struct field_t
     struct field fld;
     struct field_t **cld;
     void *ptr;                  /* private data */
+};
+
+/* for query use */
+struct field_g
+{
+    u16 id;                     /* query can by on ID */
+    u16 orig_id;
+    u16 pid;
+    u8 type;
+
+    char *name;                 /* query can by on NAME */
+    void *content;
+    int dlen;
 };
 
 #endif

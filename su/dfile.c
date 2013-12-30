@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 19:47:12 macan>
+ * Time-stamp: <2013-12-30 21:15:27 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -86,7 +86,7 @@ int df_read_meta(struct gingko_su *gs, struct dfile *df)
         df->dfh->schemas[i].id = fdd.id;
         df->dfh->schemas[i].pid = fdd.pid;
         df->dfh->schemas[i].type = fdd.type;
-        df->dfh->schemas[i].id = fdd.codec;
+        df->dfh->schemas[i].codec = fdd.codec;
 
         name = xmalloc(fdd.namelen + 1);
         if (!name) {
@@ -153,6 +153,14 @@ int df_read_meta(struct gingko_su *gs, struct dfile *df)
                      df->dfh->schemas[i].codec,
                      df->dfh->schemas[i].cidnr);
     }
+
+    /* update gs->root */
+    err = verify_schema(gs, df->dfh->schemas, df->dfh->md.fldnr);
+    if (err) {
+        gingko_err(su, "verify_schema() failed w/ %s(%d)\n",
+                   gingko_strerror(err), err);
+    }
+    
 out:
     close(fd);
     return err;
@@ -171,7 +179,7 @@ out_free:
 int df_write_meta(struct gingko_su *gs, struct dfile *df, int write_schema)
 {
     char path[4096];
-    int err = 0, bw, bl;
+    int err = 0, bw, bl, i;
 
     if (df->fds[SU_DFILE_ID] == 0) {
         sprintf(path, "%s/%s", gs->path, SU_DFILE_FILENAME);
@@ -210,8 +218,6 @@ int df_write_meta(struct gingko_su *gs, struct dfile *df, int write_schema)
 
     /* next, write schemas to disk */
     if (write_schema) {
-        int i = 0;
-
         for (i = 0; i < df->dfh->md.fldnr; i++) {
             struct field_d fdd = {
                 .id = df->dfh->schemas[i].id,

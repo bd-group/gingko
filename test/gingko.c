@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 19:41:09 macan>
+ * Time-stamp: <2013-12-31 05:04:42 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,7 +41,7 @@ int __do_write(struct field *schemas, char *supath)
         .page_algo = SU_PH_COMP_LZO,
     };
 
-    suidw = su_create(&sc, "./first_su", schemas, 7);
+    suidw = su_create(&sc, "./first_su", schemas, 8);
     if (suidw < 0) {
         printf("su_create() failed w/ %d\n", suidw);
         err = suidw;
@@ -113,6 +113,12 @@ int __do_write(struct field *schemas, char *supath)
             printf("su_field_pack() failed w/ %s\n", gingko_strerror(err));
             goto out;
         }
+        char *str = "hello, gingko!";
+        err = su_fieldpack(tmp, su_new_field(GINGKO_STRING, str, strlen(str)));
+        if (err) {
+            printf("su_field_pack() failed w/ %s\n", gingko_strerror(err));
+            goto out;
+        }
         t1 = su_l1fieldpack(flds, &fldnr, tmp);
         if (IS_ERR(t1)) {
             printf("su_l1fieldpack() failed w/ %s\n", gingko_strerror(PTR_ERR(t1)));
@@ -167,6 +173,16 @@ out:
 
 int __do_read(char *supath)
 {
+    struct field_g fields[8] = {
+        {.id = 0},
+        {.id = 1},
+        {.id = 2},
+        {.id = FLD_MAX_PID, .name = "field4"},
+        {.id = FLD_MAX_PID, .name = "field5"},
+        {.id = 5},
+        {.id = 6},
+        {.id = 7},
+    };
     int err = 0, suidr, i;
 
     suidr = su_open("./first_su", SU_OPEN_RDONLY, NULL);
@@ -177,11 +193,36 @@ int __do_read(char *supath)
     }
     printf("Open   SU id=%d\n", suidr);
 
-    for (i = 0; i < 3; i++) {
-        err = su_get(suidr, i, NULL);
+    for (i = 0; i < 8; i++) {
+        err = su_get(suidr, i % 3, &fields[i], 1);
         if (err) {
             printf("su_get() failed w/ %d\n", err);
             goto out_close;
+        }
+        if (fields[i].type == GINGKO_STRING) {
+            printf("IDX=%d -> {id=%d pid=%d type=%s dlen=%d name=%s content=[%.*s]}\n",
+                   i,
+                   fields[i].id,
+                   fields[i].pid,
+                   gingko_type(fields[i].type),
+                   fields[i].dlen,
+                   fields[i].name,
+                   fields[i].dlen,
+                   (char *)fields[i].content);
+        } else {
+            int *pi = (int *)&fields[i].content;
+            double *pd = (double *)&fields[i].content;
+            
+            printf("IDX=%d -> {id=%d pid=%d type=%s dlen=%d name=%s content=[%d|%ld|%lf]}\n",
+                   i,
+                   fields[i].id,
+                   fields[i].pid,
+                   gingko_type(fields[i].type),
+                   fields[i].dlen,
+                   fields[i].name,
+                   *pi,
+                   (u64)fields[i].content,
+                   *pd);
         }
     }
 
@@ -194,7 +235,7 @@ out:
 int main(int argc, char *argv[])
 {
     int err = 0;
-    struct field schemas[7] = {
+    struct field schemas[8] = {
         {.name = "field1", .id = 0, .pid = FLD_MAX_PID, .type = GINGKO_INT64, 
          .codec = FLD_CODEC_NONE, .cidnr = 0},
         {.name = "field2", .id = 1, .pid = FLD_MAX_PID, .type = GINGKO_DOUBLE,
@@ -208,6 +249,8 @@ int main(int argc, char *argv[])
         {.name = "field6", .id = 5, .pid = 4, .type = GINGKO_INT64,
          .codec = FLD_CODEC_NONE, .cidnr = 0},
         {.name = "field7", .id = 6, .pid = 4, .type = GINGKO_DOUBLE,
+         .codec = FLD_CODEC_NONE, .cidnr = 0},
+        {.name = "field8", .id = 7, .pid = 4, .type = GINGKO_STRING,
          .codec = FLD_CODEC_NONE, .cidnr = 0},
     };
 

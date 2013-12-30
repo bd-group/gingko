@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 23:40:08 macan>
+ * Time-stamp: <2013-12-27 15:44:46 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,7 +32,7 @@ void dump_pageindex(struct pageindex *pi)
 int build_pageindex(struct page *p, struct line *line, long lid,
                     struct gingko_su *gs)
 {
-    void *tmp;
+    void *tmp, *lh = NULL;
     int err = 0;
 
     if (!p->pi)
@@ -43,16 +43,27 @@ int build_pageindex(struct page *p, struct line *line, long lid,
     /* FIXME: update fldstat array */
 
     /* FIXME: lineheaders are ready, save them now */
+    lh = xmalloc((gs->files[p->dfid].dfh->md.l1fldnr + 1) * 
+                  sizeof(struct lineheader));
+    if (!lh) {
+        gingko_err(index, "xmalloc() lineheader array entry failed, "
+                   "no memory.\n");
+        goto out;
+    }
+
     tmp = xrealloc(p->pi->lharray, p->pi->linenr * sizeof(struct lineheader *));
     if (!tmp) {
         gingko_err(index, "xrealloc() lineheaders array failed, no memory.\n");
         p->pi->linenr--;
+        xfree(lh);
         goto out;
     }
     p->pi->lharray = tmp;
-    p->pi->lharray[p->pi->linenr - 1] = line->lh;
+    memcpy(lh, line->lh, sizeof(struct lineheader) *
+           (gs->files[p->dfid].dfh->md.l1fldnr + 1));
+    p->pi->lharray[p->pi->linenr - 1] = lh;
 
-    if (!p->pi->linenr)
+    if (p->pi->linenr == 1)
         p->pi->startline = lid;
 
 out:

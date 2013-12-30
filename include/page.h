@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 23:43:14 macan>
+ * Time-stamp: <2013-12-27 14:22:29 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,6 +46,9 @@ struct pageheader
     u32 crc32;
 
     u32 lhoff;
+
+    /* dup info from index */
+    u32 startline;
     u32 lnr;
 };
 

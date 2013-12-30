@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-21 22:07:42 macan>
+ * Time-stamp: <2013-12-31 04:59:06 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,36 @@
  */
 
 #include "gingko.h"
+
+char *gingko_type(int type)
+{
+    switch (type) {
+    case GINGKO_INT8:
+        return "int8";
+    case GINGKO_INT16:
+        return "int16";
+    case GINGKO_INT32:
+        return "int32";
+    case GINGKO_INT64:
+        return "int64";
+    case GINGKO_FLOAT:
+        return "float";
+    case GINGKO_DOUBLE:
+        return "double";
+    case GINGKO_STRING:
+        return "string";
+    case GINGKO_BYTES:
+        return "bytes";
+    case GINGKO_ARRAY:
+        return "array";
+    case GINGKO_STRUCT:
+        return "struct";
+    case GINGKO_MAP:
+        return "map";
+    default:
+        return "unknown";
+    }
+}
 
 static struct field_t *__alloc_field_t(int type)
 {
@@ -115,22 +145,42 @@ out_free:
     goto out;
 }
 
-static struct field_t *__find_field_t(struct field_t *root, int id)
+struct field_t *__find_field_t(struct field_t *root, int id)
+{
+    struct field_t *target = NULL;
+    int i = 0;
+
+    if (root->type != FIELD_TYPE_ROOT && root->fld.id == id) {
+        target = root;
+        goto out;
+    }
+
+    /* iterate on root type */
+    for (i = 0; i < root->cnr; i++) {
+        target = __find_field_t(root->cld[i], id);
+        if (target) {
+            goto out;
+        }
+    }
+
+out:
+    return target;
+}
+
+struct field_t *__find_field_t_by_name(struct field_t *root, char *name)
 {
     struct field_t *target = NULL;
     int i = 0;
     
-    if (root->type == FIELD_TYPE_ROOT) {
-        /* iterate on root type */
-        for (i = 0; i < root->cnr; i++) {
-            target = __find_field_t(root->cld[i], id);
-            if (target) {
-                goto out;
-            }
-        }
-    } else {
-        if (root->fld.id == id) {
-            target = root;
+    if (root->type != FIELD_TYPE_ROOT && strcmp(root->fld.name, name) == 0) {
+        target = root;
+        goto out;
+    }
+
+    /* iterate on root type */
+    for (i = 0; i < root->cnr; i++) {
+        target = __find_field_t_by_name(root->cld[i], name);
+        if (target) {
             goto out;
         }
     }
@@ -208,6 +258,14 @@ int verify_schema(struct gingko_su *gs, struct field schemas[], int schelen)
         err = -ENOMEM;
         goto out;
     }
+
+    if (schelen > 0) {
+        if (schemas[0].pid != FLD_MAX_PID) {
+            gingko_err(su, "The first have to be l1field.\n");
+            err = -EBADSCHEMA;
+            goto out_free;
+        }
+    }
     
     for (i = 0; i < schelen; i++) {
         /* construct a schema tree and verify it */
@@ -263,7 +321,16 @@ int build_lineheaders(struct gingko_su *gs, struct line *line, long lid,
 
     /* for each dfile, re-calculate l1 field offset */
     for (i = 0; i < gs->sm.dfnr; i++) {
+        /* check if the 0th offset is ZERO. if not, do offset shift left */
+        u64 zoff = 0;
+        
         for (j = 0; j < l1fld[i]; j++) {
+            /* NOTE-XXX: to support user line reusing, we should automatically
+             * dec the offset */
+            if (j == 0)
+                zoff = line->lh[j + 1].offset;
+            if (zoff > 0)
+                line->lh[j + 1].offset -= zoff;
             line->lh[j + 1].offset += coff;
         }
     }
@@ -394,54 +461,13 @@ int linepack_string(struct line *line, void *data, int dlen)
 
     SET_VARHEAD(line->data + line->len, hlen, dlen);
     memcpy(line->data + line->len + hlen, data, dlen);
+    gingko_debug(su, "PACK data %.*s len %d off %d\n", dlen, 
+                 (char *)data, dlen, line->len);
     
     line->len += hlen + dlen;
     
 out:
     return err;
-}
-
-static int __UNUSED__ __get_datalen(struct field_2pack *fld)
-{
-    /* iterate the field array to find all data length, if it is a complex
-     * type, recursive calculate */
-
-    switch (fld->type) {
-    case GINGKO_INT8:
-        return 1;
-    case GINGKO_INT16:
-        return 2;
-    case GINGKO_INT32:
-        return 4;
-    case GINGKO_INT64:
-        return 8;
-    case GINGKO_FLOAT:
-        return 4;
-    case GINGKO_DOUBLE:
-        return 8;
-    case GINGKO_STRING:
-    case GINGKO_BYTES:
-        return fld->dlen + __get_headlen(fld->dlen);
-    case GINGKO_ARRAY:
-    case GINGKO_STRUCT:
-    case GINGKO_MAP:
-    {
-        int i;
-        int dlen = 0;
-
-        for (i = 0; i < fld->cidnr; i++) {
-            dlen += __get_datalen(fld->clds[i]);
-        }
-
-        return dlen;
-        break;
-    }
-    default:
-        gingko_err(su, "Invalid data type=%d\n", fld->type);
-        GINGKO_BUGON("Invalid data type.");
-    }
-
-    return 0;
 }
 
 int linepack_complex(struct line *line, struct field_2pack *fld)
@@ -514,4 +540,298 @@ out:
     return err;
 }
 
+int lineunpack_primitive(void *idata, struct field_t *f, struct field_g *fg)
+{
+    switch (f->fld.type) {
+    case GINGKO_INT8:
+        fg->dlen = 1;
+        break;
+    case GINGKO_INT16:
+        fg->dlen = 2;
+        break;
+    case GINGKO_INT32:
+    case GINGKO_FLOAT:
+        fg->dlen = 4;
+        break;
+    case GINGKO_INT64:
+    case GINGKO_DOUBLE:
+        fg->dlen = 8;
+        break;
+    default:
+        return -EINVAL;
+    }
+    memcpy(&fg->content, idata, fg->dlen);
 
+    return 0;
+}
+
+static inline int GET_VARHEAD(void *head, int *dlen)
+{
+    struct l1b *t = head;
+
+    switch (t->flag) {
+    case SU_TYPE_L1B:
+    {
+        struct l1b *p = t;
+        *dlen = p->len;
+        return 1;
+    }
+    case SU_TYPE_L2B:
+    {
+        struct l2b *p = head;
+        *dlen = p->len;
+        return 2;
+    }
+    case SU_TYPE_L3B:
+    {
+        struct l3b *p = head;
+        *dlen = (p->lenhb << 14) + p->len;
+        return 3;
+    }
+    case SU_TYPE_L4B:
+    {
+        struct l4b *p = head;
+        *dlen = p->len;
+        return 4;
+    }
+    default:
+        return -1;
+    }
+}
+
+static int __get_datalen(struct field_t *f, void *data)
+{
+    /* iterate the field array to find all data length, if it is a complex
+     * type, recursive calculate */
+
+    switch (f->fld.type) {
+    case GINGKO_INT8:
+        return 1;
+    case GINGKO_INT16:
+        return 2;
+    case GINGKO_INT32:
+    case GINGKO_FLOAT:
+        return 4;
+    case GINGKO_INT64:
+    case GINGKO_DOUBLE:
+        return 8;
+    case GINGKO_STRING:
+    case GINGKO_BYTES:
+    {
+        int dlen, hlen = GET_VARHEAD(data, &dlen);
+        
+        return dlen + hlen;
+    }
+    case GINGKO_ARRAY:
+    case GINGKO_STRUCT:
+    case GINGKO_MAP:
+    {
+        int i;
+        int dlen = 0;
+
+        for (i = 0; i < f->cnr; i++) {
+            dlen += __get_datalen(f->cld[i], data + dlen);
+        }
+
+        return dlen;
+    }
+    default:
+        gingko_err(su, "Invalid data type=%d\n", f->fld.type);
+        GINGKO_BUGON("Invalid data type.");
+    }
+
+    return 0;
+}
+
+int lineunpack_complex(void *idata, int dlen, struct field_t *f, 
+                       struct field_g *fg)
+{
+    int err = 0, hlen;
+
+    hlen = GET_VARHEAD(idata, &fg->dlen);
+    if (hlen < 0) {
+        gingko_err(su, "Get VarHead for unpack complex field failed.\n");
+        err = -EINTERNAL;
+        goto out;
+    }
+    
+    switch (f->fld.type) {
+    case GINGKO_ARRAY:
+    case GINGKO_STRUCT:
+    case GINGKO_MAP:
+    {
+        /* copy all the data by dlen */
+        if (dlen >= hlen) {
+            fg->dlen = dlen - hlen;
+            fg->content = xmalloc(fg->dlen);
+            if (!fg->content) {
+                gingko_err(su, "xmalloc() string/bytes buffer failed.\n");
+                err = -ENOMEM;
+                goto out;
+            }
+            memcpy(fg->content, idata + hlen, fg->dlen);
+        } else {
+            /* no lineheader */
+            err = -ENOTIMP;
+            goto out;
+        }
+        break;
+    }
+    case GINGKO_STRING:
+    case GINGKO_BYTES:
+    {
+        /* copy all the data by dlen */
+        if (dlen >= hlen) {
+            fg->content = xmalloc(fg->dlen);
+            if (!fg->content) {
+                gingko_err(su, "xmalloc() string/bytes buffer failed.\n");
+                err = -ENOMEM;
+                goto out;
+            }
+            memcpy(fg->content, idata + hlen, fg->dlen);
+        } else {
+            /* no lineheader */
+            err = -ENOTIMP;
+            goto out;
+        }
+        break;
+    }
+    default:
+        err = -EINVAL;
+        goto out;
+    }
+out:
+    return err;
+}
+
+int lineunpack(void *idata, int dlen, struct field_t *f, struct field_g *fg)
+{
+    int err = 0;
+    
+    switch (f->fld.type) {
+    case GINGKO_INT8:
+    case GINGKO_INT16:
+    case GINGKO_INT32:
+    case GINGKO_FLOAT:
+    case GINGKO_INT64:
+    case GINGKO_DOUBLE:
+        err = lineunpack_primitive(idata, f, fg);
+        break;
+    case GINGKO_STRING:
+    case GINGKO_BYTES:
+    case GINGKO_ARRAY:
+    case GINGKO_STRUCT:
+    case GINGKO_MAP:
+        err = lineunpack_complex(idata, dlen, f, fg);
+        break;
+    default:
+        err = -EINVAL;
+        goto out;
+    }
+out:
+    return err;
+}
+
+string_t lineparse_string(struct field_g *f)
+{
+    string_t s;
+
+    if (f->type == GINGKO_STRING) {
+        s.len = f->dlen;
+        s.str = f->content;
+    }
+    
+    return s;
+}
+
+void gingko_p_string(string_t s)
+{
+    gingko_info(su, "string_t %.*s\n", s.len, s.str);
+}
+
+int lineparse(struct field_g *f, struct field_t *this, struct field_t *tf)
+{
+    int err = 0;
+
+    switch (f->type) {
+    case GINGKO_INT8:
+    {
+        u8 t = *(u8 *)f->content;
+        xfree(f->content);
+        f->content = (void *)(u64)t;
+        f->dlen = 1;
+        break;
+    }
+    case GINGKO_INT16:
+    {
+        u16 t = *(u16 *)f->content;
+        xfree(f->content);
+        f->content = (void *)(u64)t;
+        f->dlen = 2;
+        break;
+    }
+    case GINGKO_INT32:
+    case GINGKO_FLOAT:
+    {
+        u32 t = *(u32 *)f->content;
+        xfree(f->content);
+        f->content = (void *)(u64)t;
+        f->dlen = 4;
+        break;
+    }
+    case GINGKO_INT64:
+    case GINGKO_DOUBLE:
+    {
+        u64 t = *(u64 *)f->content;
+        xfree(f->content);
+        f->content = (void *)t;
+        f->dlen = 8;
+        break;
+    }
+    case GINGKO_STRING:
+    case GINGKO_BYTES:
+    {
+        int hlen = GET_VARHEAD(f->content, &f->dlen);
+        memmove(f->content, f->content + hlen, f->dlen);
+        break;
+    }
+    case GINGKO_MAP:
+        /* FIXME: only works for one level embed */
+    case GINGKO_STRUCT:
+    {
+        /* FIXME: only works for one level embed */
+        int i;
+
+        for (i = 0; i < this->cnr; i++) {
+            if (this->cld[i]->fld.id == tf->fld.id) {
+                /* ok, parse this field */
+                f->id = tf->fld.id;
+                f->pid = tf->fld.pid;
+                f->type = tf->fld.type;
+                xfree(f->name);
+                f->name = strdup(tf->fld.name);
+                f->dlen = __get_datalen(this->cld[i], f->content);
+                break;
+            } else {
+                /* need to skip this data region */
+                int skip = __get_datalen(this->cld[i], f->content);
+                gingko_debug(su, "SKIP ID=%d len=%d\n", 
+                             this->cld[i]->fld.id, skip);
+                memmove(f->content, f->content + skip, f->dlen - skip);
+            }
+        }
+        return lineparse(f, this, tf);
+    }
+    case GINGKO_ARRAY:
+        /* just return the zeroth entry */
+        f->id = tf->fld.id;
+        f->pid = tf->fld.pid;
+        f->type = tf->fld.type;
+        xfree(f->name);
+        f->name = strdup(tf->fld.name);
+        return lineparse(f, this, tf);
+    default:;
+    }
+
+    return err;
+}

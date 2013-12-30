@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 23:05:00 macan>
+ * Time-stamp: <2013-12-30 21:28:31 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -969,7 +969,7 @@ out:
 
 /* Read a line from SU
  */
-int su_get(int suid, long lid, char *fields[])
+int su_get(int suid, long lid, struct field_g fields[], int fldnr)
 {
     struct gingko_suid *gid;
     struct page *p;
@@ -1002,9 +1002,16 @@ int su_get(int suid, long lid, char *fields[])
                        gingko_strerror(err), err);
             goto out;
         }
+        dump_page(p);
     }
 
     /* Step 3: find lid in page */
+    err = page_read(gid->gs, p, lid, fields, fldnr, UNPACK_ALL);
+    if (err) {
+        gingko_err(su, "page_read(lid=%ld) failed w/ %s(%d)\n",
+                   lid, gingko_strerror(err), err);
+        goto out;
+    }
 
 out:
     return err;

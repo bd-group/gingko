@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 23:53:36 macan>
+ * Time-stamp: <2013-12-31 04:56:02 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -140,10 +140,10 @@ void __free_page(struct page *p)
 
 void dump_page(struct page *p)
 {
-    gingko_info(su, "Page %p %s dfid %d ref %d ph.flag %d\n",
+    gingko_info(su, "Page %p %s dfid %d ref %d ph.flag %d stline %u lnr %u\n",
                 p, p->suname, p->dfid,
                 atomic_read(&p->ref),
-                p->ph.flag);
+                p->ph.flag, p->ph.startline, p->ph.lnr);
     if (p->pi)
         dump_pageindex(p->pi);
 }
@@ -367,6 +367,8 @@ struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff)
 
     /* Step 4: insert into page cache */
     p->pgoff = pgoff;
+    p->pi->lha = p->data + p->ph.lhoff;
+
     __page_get(p);
 retry:
     switch (__pcrh_insert(p)) {
@@ -570,6 +572,7 @@ int page_sync(struct page *p, struct gingko_su *gs)
     }
 
     /* do pre-compress operations */
+    p->ph.startline = p->pi->startline;
     p->ph.lnr = p->pi->linenr;
     p->ph.lhoff = p->coff;
     for (i = 0; i < p->ph.lnr; i++) {
@@ -579,6 +582,7 @@ int page_sync(struct page *p, struct gingko_su *gs)
         p->coff += (gs->files[p->dfid].dfh->md.l1fldnr + 1) * 
             sizeof(struct lineheader);
     }
+    p->pi->lha = p->data + p->ph.lhoff;
     p->ph.orig_len = p->coff;
     p->ph.crc32 = crc32c(0, p->data, p->coff);
 
@@ -625,6 +629,11 @@ int page_sync(struct page *p, struct gingko_su *gs)
     }
     
     /* do post-write operations */
+    for (i = 0; i < p->ph.lnr; i++) {
+        xfree(p->pi->lharray[i]);
+    }
+    p->pi->lharray = NULL;
+
     /* TODO: update page's pgoff, remove it from hash table */
     if (!hlist_unhashed(&p->hlist)) {
         __pcrh_remove(p);
@@ -652,3 +661,144 @@ out_err:
     p->ph.status = SU_PH_DIRTY;
     goto out;
 }
+
+struct field_t *find_field(struct gingko_su *gs, int id)
+{
+    struct field_t *f = NULL;
+
+    if (gs->root) {
+        f = __find_field_t(gs->root, id);
+    } else {
+        /* FIXME: use df 0 */
+    }
+    
+    return f;
+}
+
+struct field_t *find_field_by_name(struct gingko_su *gs, char *name)
+{
+    struct field_t *f = NULL;
+
+    if (gs->root) {
+        f = __find_field_t_by_name(gs->root, name);
+    } else {
+        /* FIXME: use df 0 */
+    }
+    
+    return f;
+}
+
+int page_read(struct gingko_su *gs, struct page *p, long lid, 
+              struct field_g fields[], int fldnr, int flag)
+{
+    struct lineheader0 *lh0;
+    struct lineheader *lh;
+    struct field_t *f;
+    int err = 0, i, j;
+
+    if (lid < p->ph.startline || lid >= p->ph.startline + p->ph.lnr) {
+        return -ENODATAR;
+    }
+    
+    /* lookup in the line header array */
+    lh = p->pi->lha + (gs->files[p->dfid].dfh->md.l1fldnr + 1) *
+        (lid - p->ph.startline);
+    lh0 = (void *)lh;
+    for (i = 0; i < lh0->len; i++) {
+        gingko_debug(su, "For %ld LH %p Got FID %d offset %d\n",
+                     lid, lh, lh[i + 1].l1fld, lh[i + 1].offset);
+    }
+
+    /* upgrade field get to l1field */
+    for (i = 0; i < fldnr; i++) {
+        fields[i].orig_id = FLD_MAX_PID;
+    }
+    for (i = 0; i < fldnr; i++) {
+        if (fields[i].id != FLD_MAX_PID) {
+            f = find_field(gs, fields[i].id);
+            if (!f) {
+                gingko_err(su, "Can not find field ID=%d\n", fields[i].id);
+                goto out;
+            }
+        } else {
+            f = find_field_by_name(gs, fields[i].name);
+            if (!f) {
+                gingko_err(su, "Can not find field NAME=%s\n", fields[i].name);
+                goto out;
+            }
+        }
+        if (fields[i].orig_id == FLD_MAX_PID)
+            fields[i].orig_id = f->fld.id;
+        
+        if (f->fld.pid != FLD_MAX_PID) {
+            /* ok, upgrade it now */
+            gingko_debug(su, "Upgrade field from (ID=%d or name=%s) to ID=%d\n", 
+                         fields[i].id, fields[i].name, f->fld.pid);
+            fields[i].id = f->fld.pid;
+            /* Bug-XXXX: we do NOT free user allocated name here
+             */
+            //xfree(fields[i].name);
+            fields[i].name = NULL;
+            i--;
+            continue;
+        }
+
+        switch (flag) {
+        case UNPACK_DATAONLY:
+        default:
+            break;
+        case UNPACK_ALL:
+            fields[i].id = f->fld.id;
+            fields[i].pid = f->fld.pid;
+            fields[i].type = f->fld.type;
+            if (!fields[i].name)
+                fields[i].name = strdup(f->fld.name);
+            break;
+        }
+
+        /* calc data len */
+        for (j = 0; j < gs->files[p->dfid].dfh->md.l1fldnr; j++) {
+            long this, next;
+
+            if (f->fld.id == lh[j + 1].l1fld) {
+                this = lh[j + 1].offset;
+                if (j + 1 < gs->files[p->dfid].dfh->md.l1fldnr)
+                    next = lh[j + 2].offset;
+                else {
+                    struct lineheader0 *lh0 = (void *)lh;
+                    next = lh0->llen;
+                    if (lh0->len > 0)
+                        next += lh[1].offset;
+                }
+
+                gingko_debug(su, "J=%d fld.id=%d this=%ld next=%ld\n", 
+                             j, f->fld.id, this, next);
+                err = lineunpack(p->data + lh[j + 1].offset,
+                                 next - this, f, &fields[i]);
+                if (err) {
+                    gingko_err(su, "lineunpack() fld.id=%d failed w/ %s(%d)\n",
+                               f->fld.id, gingko_strerror(err), err);
+                    goto out;
+                }
+                break;
+            }
+        }
+
+        /* finally, try to parse the field */
+        gingko_debug(su, "Compare ID=%d ORIG_ID=%d\n", 
+                     fields[i].id, fields[i].orig_id);
+        if (fields[i].orig_id != fields[i].id) {
+            err = lineparse(&fields[i], f, find_field(gs, fields[i].orig_id));
+            if (err) {
+                gingko_err(su, "lineparse() ID=%d Orig_ID=%d failed w/ %s(%d)\n",
+                           fields[i].id, fields[i].orig_id,
+                           gingko_strerror(err), err);
+                goto out;
+            }
+        }
+    }
+    
+out:
+    return err;
+}
+

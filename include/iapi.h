@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 23:10:10 macan>
+ * Time-stamp: <2013-12-31 02:44:23 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,10 +48,15 @@ void __pre_trav_schemas(struct field_t *root, tfunc cb);
 void __post_trav_schemas(struct field_t *root, tfunc cb);
 void __free_schema(void *arg);
 
+struct field_t *__find_field_t_by_name(struct field_t *root, char *name);
+struct field_t *__find_field_t(struct field_t *root, int id);
+
 struct field_t *alloc_field_t(int type);
 int linepack_primitive(struct line *line, void *data, int dlen);
 int linepack_string(struct line *line, void *data, int dlen);
 int linepack_complex(struct line *line, struct field_2pack *fld);
+int lineunpack(void *idata, int dlen, struct field_t *f, struct field_g *fg);
+int lineparse(struct field_g *f, struct field_t *this, struct field_t *tf);
 int build_lineheaders(struct gingko_su *gs, struct line *line, long lid,
                       u64 coff);
 void dump_lineheader(long lid, struct line *line);
@@ -70,6 +75,11 @@ void put_page(struct page *p);
 void dump_page(struct page *p);
 int page_sync(struct page *p, struct gingko_su *gs);
 struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff);
+
+#define UNPACK_DATAONLY         0
+#define UNPACK_ALL              1
+int page_read(struct gingko_su *gs, struct page *p, long lid, 
+              struct field_g fields[], int fldnr, int flag);
 
 #define SU_PAGE_ALLOC_ADDL2P    0x01
 struct page *__alloc_page(struct gingko_su *gs, int dfid, int flags);

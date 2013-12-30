@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 19:38:49 macan>
+ * Time-stamp: <2013-12-30 21:44:17 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -134,7 +134,7 @@ struct optree
 
 int su_scan(char *supath, struct range *r, struct optree *opt);
 
-int su_get(int suid, long lid, char *fields[]);
+int su_get(int suid, long lid, struct field_g fields[], int fldnr);
 
 int su_mget(int suid, long lids[], char *fields[]);
 
@@ -162,5 +162,7 @@ struct pgstat
 };
 
 int su_statpg(char *supath, int dfid, int pgid, struct pgstat *r);
+
+char *gingko_type(int type);
 
 #endif
