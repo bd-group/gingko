@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-26 15:44:52 macan>
+ * Time-stamp: <2014-01-10 04:11:34 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,31 +28,124 @@ struct page_cache
     xlock_t lock;               /* lock to protect hash table */
     int pcsize;                 /* page cache hash table size */
     struct regular_hash *pcrh;
+
+    sem_t async_page_sync_sem;
+    pthread_t *async_threads;
+    int *async_page_sync_thread_stop;
+    int async_page_sync_thread_nr;
+
+    struct list_head async_page_list;
+    xlock_t async_page_lock;
 };
 
 static struct page_cache gpc;
+
+struct async_psync
+{
+    struct list_head list;
+    struct page *p;
+    struct gingko_su *gs;
+};
+
+static void *__async_page_sync_main(void *args);
 
 int pagecache_init(struct gingko_conf *conf)
 {
     int err = 0, i;
 
     memset(&gpc, 0, sizeof(gpc));
+    gpc.async_page_sync_thread_nr = conf->async_page_sync_thread_nr;
+    if (!gpc.async_page_sync_thread_nr)
+        gpc.async_page_sync_thread_nr = GINGKO_ASYNC_PSYNC_TNR;
+    gpc.async_page_sync_thread_stop = xzalloc(sizeof(int) *
+                                              gpc.async_page_sync_thread_nr);
+    if (!gpc.async_page_sync_thread_stop) {
+        gingko_err(su, "xzalloc(%d * int) failed\n",
+                   gpc.async_page_sync_thread_nr);
+        err = -ENOMEM;
+        goto out;
+    }
+    sem_init(&gpc.async_page_sync_sem, 0, 0);
+
+    INIT_LIST_HEAD(&gpc.async_page_list);
+    xlock_init(&gpc.async_page_lock);
 
     xlock_init(&gpc.lock);
     gpc.pcsize = conf->pcrh_size;
     gpc.pcrh = xzalloc(sizeof(*gpc.pcrh) * gpc.pcsize);
     if (!gpc.pcrh) {
-        gingko_err(api, "xzalloc(%d * PCRH) failed\n", gpc.pcsize);
+        gingko_err(su, "xzalloc(%d * PCRH) failed\n", gpc.pcsize);
         err = -ENOMEM;
-        goto out;
+        goto out_free;
     }
     for (i = 0; i < gpc.pcsize; i++) {
         INIT_HLIST_HEAD(&gpc.pcrh[i].h);
         xlock_init(&gpc.pcrh[i].lock);
     }
+
+    /* start async threads */
+    gpc.async_threads = xmalloc(sizeof(pthread_t) *
+                                gpc.async_page_sync_thread_nr);
+    if (!gpc.async_threads) {
+        gingko_err(su, "xmalloc() pthread_t failed\n");
+        err = -ENOMEM;
+        goto out_free2;
+    }
+    for (i = 0; i < gpc.async_page_sync_thread_nr; i++) {
+        err = pthread_create(&gpc.async_threads[i], NULL, 
+                             &__async_page_sync_main, (void *)(long)i);
+        if (err) {
+            gingko_err(su, "Create async page sync thread failed w/ %s(%d)\n",
+                       gingko_strerror(errno), errno);
+            err = -errno;
+            goto out_destroy;
+        }
+    }
+    gingko_info(su, "Start %d async page sync thread.\n",
+                gpc.async_page_sync_thread_nr);
     
 out:
     return err;
+out_destroy:
+    {
+        int j;
+        for (j = i; j > 0; j--) {
+            gpc.async_page_sync_thread_stop[j] = 1;
+        }
+        for (j = i; j > 0; j--) {
+            sem_post(&gpc.async_page_sync_sem);
+        }
+        for (j = i; j > 0; j--) {
+            pthread_join(gpc.async_threads[j], NULL);
+        }
+    }
+out_free2:
+    xfree(gpc.async_threads);
+out_free:
+    xfree(gpc.async_page_sync_thread_stop);
+    goto out;
+}
+
+void pagecache_fina()
+{
+    struct page *p;
+    struct hlist_node *pos, *n;
+    struct regular_hash *rh;
+    int i;
+    
+    for (i = 0; i < gpc.pcsize; i++) {
+        rh = gpc.pcrh + i;
+        xlock_lock(&rh->lock);
+        hlist_for_each_entry_safe(p, pos, n, &rh->h, hlist) {
+            if (p->ph.status == SU_PH_DIRTY) {
+                char info[1024];
+                sprintf(info, "Dirty page for GS %s still exists.", p->suname); 
+                GINGKO_BUGON(info);
+            }
+        }
+        xlock_unlock(&rh->lock);
+    }
+    xfree(gpc.pcrh);
 }
 
 static inline int __calc_pcrh_slot(char *suname, int dfid, u64 pgoff)
@@ -174,5 +267,73 @@ out:
 void put_page(struct page *p)
 {
     __page_put(p);
+}
+
+void async_page_sync(struct page *p, struct gingko_su *gs)
+{
+    struct async_psync *ap = xmalloc(sizeof(struct async_psync));
+    int added = 0;
+
+    if (!ap)
+        return;
+    INIT_LIST_HEAD(&ap->list);
+    ap->p = p;
+    ap->gs = gs;
+    
+    xrwlock_wlock(&p->rwlock);
+    if (p->ph.status == SU_PH_DIRTY) {
+        xlock_lock(&gpc.async_page_lock);
+        list_add_tail(&gpc.async_page_list, &ap->list);
+        xlock_unlock(&gpc.async_page_lock);
+        added = 1;
+    }
+    xrwlock_wunlock(&p->rwlock);
+    if (added) {
+        sem_post(&gpc.async_page_sync_sem);
+    }
+}
+
+static void *__async_page_sync_main(void *args)
+{
+    sigset_t set;
+    struct async_psync *ap;
+    int err, tid = (int)(long)args;
+
+    /* first, let us block the SIGALRM */
+    sigemptyset(&set);
+    sigaddset(&set, SIGALRM);
+    pthread_sigmask(SIG_BLOCK, &set, NULL); /* oh, we do not care about the
+                                             * errs */
+    /* then, we loop for the page sync events */
+    while (!gpc.async_page_sync_thread_stop[tid]) {
+        err = sem_wait(&gpc.async_page_sync_sem);
+        if (err) {
+            if (errno == EINTR)
+                continue;
+            gingko_err(su, "sem_wait() failed w/ %s\n", strerror(errno));
+        }
+
+        ap = NULL;
+        xlock_lock(&gpc.async_page_lock);
+        if (!list_empty(&gpc.async_page_list)) {
+            ap = list_first_entry(&gpc.async_page_list, 
+                                  struct async_psync, list);
+        }
+        xlock_unlock(&gpc.async_page_lock);
+        if (ap) {
+            xrwlock_wlock(&ap->p->rwlock);
+            err = page_sync(ap->p, ap->gs);
+            xrwlock_wunlock(&ap->p->rwlock);
+            if (err) {
+                gingko_err(api, "page_sync() SU %s DF %d PGOFF %lx "
+                           "failed w/ %s(%d)\n",
+                           ap->p->suname, ap->p->dfid, ap->p->pgoff,
+                           gingko_strerror(err), err);
+            }
+        }
+    }
+
+    gingko_debug(su, "Hooo, I am exiting...\n");
+    pthread_exit(0);
 }
 

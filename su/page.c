@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-31 04:56:02 macan>
+ * Time-stamp: <2014-01-10 03:44:29 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -185,6 +185,10 @@ int page_write(struct page *p, struct line *line, long lid,
     }
 
     /* copy line data to page data, record current offset */
+    if (p->coff + line->len > gs->conf.page_size) {
+        sched_yield();
+        return -EAGAIN;
+    }
     memcpy(p->data + p->coff, line->data, line->len);
 
     /* build lineheader */
@@ -564,9 +568,8 @@ int page_sync(struct page *p, struct gingko_su *gs)
         p->ph.status = SU_PH_WB;
         break;
     case SU_PH_WB:
-        /* pending write back? it is impossible! */
-        GINGKO_BUGON("In page_sync() has pending write back?!");
-        break;
+        /* pending write back? */
+        return -EAGAIN;
     default:
         return -ESTATUS;
     }
@@ -651,6 +654,8 @@ int page_sync(struct page *p, struct gingko_su *gs)
         gingko_warning(su, "df_append_l2p() failed w/ %s(%d)\n",
                        gingko_strerror(err), err);
     }
+
+    p->ph.status = SU_PH_WBDONE;
 
 out:
     xfree(zdata);

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-30 21:28:31 macan>
+ * Time-stamp: <2014-01-10 03:45:11 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -325,10 +325,15 @@ static int __su_sync(struct gingko_su *gs)
             gingko_warning(api, "get_page() DF %d failed w/ %s(%d)\n",
                            i, gingko_strerror(err), err);
         } else {
+        retry:
             xrwlock_wlock(&p->rwlock);
             err = page_sync(p, gs);
             xrwlock_wunlock(&p->rwlock);
             if (err) {
+                if (err == -EAGAIN) {
+                    sched_yield();
+                    goto retry;
+                }
                 gingko_err(api, "page_sync() DF %d failed w/ %s(%d)\n",
                            i, gingko_strerror(err), err);
                 goto out;
@@ -884,6 +889,7 @@ int su_write(int suid, struct line *line, long lid)
     }
 
     /* write to page and build lineheaders */
+retry:
     {
         /* FIXME: in this version, we only allow write to the zero-th dfile */
         struct page *p = get_page(gid->gs, 0, SU_PG_MAX_PGOFF);
@@ -903,6 +909,10 @@ int su_write(int suid, struct line *line, long lid)
                 gingko_err(api, "page_write() failed w/ %s(%d)\n",
                            gingko_strerror(err), err);
                 goto out;
+            }
+            if (err == -EAGAIN) {
+                put_page(p);
+                goto retry;
             }
             sched_yield();
         } while (err);
@@ -958,6 +968,8 @@ int su_close(int suid)
     }
     
     gid = g_mgr.gsu + suid;
+    /* FIXME: write back all the dirty pages from this SU */
+    
     gingko_debug(api, "Close SU '%s', id=%d, pre-put:ref=%d\n",
                  gid->gs->sm.name, suid, atomic_read(&gid->gs->ref));
 
