@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-31 02:44:23 macan>
+ * Time-stamp: <2014-01-12 02:01:31 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,6 +63,7 @@ void dump_lineheader(long lid, struct line *line);
 
 struct gingko_conf;
 int pagecache_init(struct gingko_conf *conf);
+int pagecache_fina(void);
 void __pcrh_remove(struct page *p);
 int __pcrh_insert(struct page *p);
 struct page *__pcrh_lookup(char *suname, int dfid, u64 pgoff);
@@ -75,6 +76,7 @@ void put_page(struct page *p);
 void dump_page(struct page *p);
 int page_sync(struct page *p, struct gingko_su *gs);
 struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff);
+void async_page_sync(struct page *p, struct gingko_su *gs);
 
 #define UNPACK_DATAONLY         0
 #define UNPACK_ALL              1

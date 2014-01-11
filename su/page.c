@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-10 03:44:29 macan>
+ * Time-stamp: <2014-01-12 01:41:42 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -187,7 +187,7 @@ int page_write(struct page *p, struct line *line, long lid,
     /* copy line data to page data, record current offset */
     if (p->coff + line->len > gs->conf.page_size) {
         sched_yield();
-        return -EAGAIN;
+        return -ENEWPAGE;
     }
     memcpy(p->data + p->coff, line->data, line->len);
 

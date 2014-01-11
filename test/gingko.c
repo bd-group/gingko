@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-31 05:04:42 macan>
+ * Time-stamp: <2014-01-12 01:49:12 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +37,8 @@ int __do_write(struct field *schemas, char *supath)
 {
     int err = 0, suidw;
     struct su_conf sc = {
-        .page_size = SU_PAGE_SIZE,
+        /* .page_size = SU_PAGE_SIZE, */
+        .page_size = 100,
         .page_algo = SU_PH_COMP_LZO,
     };
 
@@ -144,12 +145,12 @@ int __do_write(struct field *schemas, char *supath)
             goto out;
         }
 
-        printf("Sync Page 0 ...\n");
-        err = su_sync(suidw);
-        if (err) {
-            printf("su_sync(%d) failed w/ %s\n", suidw, gingko_strerror(err));
-            goto out;
-        }
+        /* printf("Sync Page 0 ...\n"); */
+        /* err = su_sync(suidw); */
+        /* if (err) { */
+        /*     printf("su_sync(%d) failed w/ %s\n", suidw, gingko_strerror(err)); */
+        /*     goto out; */
+        /* } */
 
         printf("Write Data Line 2 ...\n");
         err = su_write(suidw, &l, 2);
@@ -158,12 +159,12 @@ int __do_write(struct field *schemas, char *supath)
             goto out;
         }
 
-        printf("Sync Page 1 ...\n");
-        err = su_sync(suidw);
-        if (err) {
-            printf("su_sync(%d) failed w/ %s\n", suidw, gingko_strerror(err));
-            goto out;
-        }
+        /* printf("Sync Page 1 ...\n"); */
+        /* err = su_sync(suidw); */
+        /* if (err) { */
+        /*     printf("su_sync(%d) failed w/ %s\n", suidw, gingko_strerror(err)); */
+        /*     goto out; */
+        /* } */
     }
     su_close(suidw);
 
@@ -274,6 +275,12 @@ int main(int argc, char *argv[])
     err = __do_read("./first_su");
     if (err) {
         printf("__do_read() failed w/ %d\n", err);
+        goto out;
+    }
+
+    err = gingko_fina();
+    if (err) {
+        printf("gingko_fina() failed w/ %d\n", err);
         goto out;
     }
 

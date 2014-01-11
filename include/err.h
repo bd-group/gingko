@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-27 19:44:02 macan>
+ * Time-stamp: <2014-01-12 01:41:56 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@
 #define ENODATAR        1031
 #define EBADSCHEMA      1032
 #define ENOTIMP         1033
+#define ENEWPAGE        1034
 
 #define IS_ERR_VALUE(x) unlikely((x) >= (unsigned long)-MAX_ERRNO)
 

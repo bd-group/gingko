@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-10 04:11:34 macan>
+ * Time-stamp: <2014-01-11 20:17:01 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -126,7 +126,7 @@ out_free:
     goto out;
 }
 
-void pagecache_fina()
+int pagecache_fina()
 {
     struct page *p;
     struct hlist_node *pos, *n;
@@ -146,6 +146,8 @@ void pagecache_fina()
         xlock_unlock(&rh->lock);
     }
     xfree(gpc.pcrh);
+
+    return 0;
 }
 
 static inline int __calc_pcrh_slot(char *suname, int dfid, u64 pgoff)

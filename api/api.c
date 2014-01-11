@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-10 03:45:11 macan>
+ * Time-stamp: <2014-01-12 02:00:03 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -117,6 +117,14 @@ int gingko_fina(void)
     
     /* free all resources */
 
+    err = pagecache_fina();
+    if (err) {
+        gingko_err(api, "page cache fina failed w/ %s(%d)\n",
+                   gingko_strerror(err), err);
+        goto out;
+    }
+
+out:
     return err;
 }
 
@@ -905,14 +913,18 @@ retry:
             xrwlock_wlock(&p->rwlock);
             err = page_write(p, line, lid, gid->gs);
             xrwlock_wunlock(&p->rwlock);
-            if (err && err != -EAGAIN) {
+            if (err) {
+                if (err == -EAGAIN) {
+                    put_page(p);
+                    goto retry;
+                } else if (err == -ENEWPAGE) {
+                    put_page(p);
+                    async_page_sync(p, gid->gs);
+                    goto retry;
+                }
                 gingko_err(api, "page_write() failed w/ %s(%d)\n",
                            gingko_strerror(err), err);
                 goto out;
-            }
-            if (err == -EAGAIN) {
-                put_page(p);
-                goto retry;
             }
             sched_yield();
         } while (err);
@@ -969,7 +981,12 @@ int su_close(int suid)
     
     gid = g_mgr.gsu + suid;
     /* FIXME: write back all the dirty pages from this SU */
-    
+    err = __su_sync(gid->gs);
+    if (err) {
+        gingko_err(api, "__su_sync() SU '%s' id=%d failed w/ %s(%d)\n",
+                   gid->gs->sm.name, suid,
+                   gingko_strerror(err), err);
+    }
     gingko_debug(api, "Close SU '%s', id=%d, pre-put:ref=%d\n",
                  gid->gs->sm.name, suid, atomic_read(&gid->gs->ref));
 
