@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-11 20:17:01 macan>
+ * Time-stamp: <2014-01-17 10:23:35 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -126,6 +126,30 @@ out_free:
     goto out;
 }
 
+static inline int __calc_pcrh_slot(char *suname, int dfid, u64 pgoff)
+{
+    char fstr[SU_NAME_LEN + 32];
+    int len = sprintf(fstr, "%s%d%lx", suname, dfid, pgoff);
+    
+    return RSHash(fstr, len) % gpc.pcsize;
+}
+
+static inline void __page_get(struct page *p)
+{
+    gingko_err(su, "__page_get(%p) ref %d\n", p, atomic_read(&p->ref));
+    atomic_inc(&p->ref);
+}
+
+void __free_page(struct page *p);
+
+static inline void __page_put(struct page *p)
+{
+    gingko_err(su, "__page_put(%p) ref %d\n", p, atomic_read(&p->ref));
+    if (atomic_dec_return(&p->ref) < 0) {
+        __free_page(p);
+    }
+}
+
 int pagecache_fina()
 {
     struct page *p;
@@ -142,34 +166,28 @@ int pagecache_fina()
                 sprintf(info, "Dirty page for GS %s still exists.", p->suname); 
                 GINGKO_BUGON(info);
             }
+            hlist_del_init(&p->hlist);
+            gingko_err(su, "PAGE %p ref %d\n", p, atomic_read(&p->ref));
+            __page_put(p);
         }
         xlock_unlock(&rh->lock);
     }
+
+    for (i = 0; i < gpc.async_page_sync_thread_nr; i++) {
+        gpc.async_page_sync_thread_stop[i] = 1;
+    }
+    for (i = 0; i < gpc.async_page_sync_thread_nr; i++) {
+        sem_post(&gpc.async_page_sync_sem);
+    }
+    for (i = 0; i < gpc.async_page_sync_thread_nr; i++) {
+        pthread_join(gpc.async_threads[i], NULL);
+    }
+    
+    xfree(gpc.async_page_sync_thread_stop);
+    xfree(gpc.async_threads);
     xfree(gpc.pcrh);
 
     return 0;
-}
-
-static inline int __calc_pcrh_slot(char *suname, int dfid, u64 pgoff)
-{
-    char fstr[SU_NAME_LEN + 32];
-    int len = sprintf(fstr, "%s%d%lx", suname, dfid, pgoff);
-    
-    return RSHash(fstr, len) % gpc.pcsize;
-}
-
-static inline void __page_get(struct page *p)
-{
-    atomic_inc(&p->ref);
-}
-
-void __free_page(struct page *p);
-
-static inline void __page_put(struct page *p)
-{
-    if (atomic_dec_return(&p->ref) < 0) {
-        __free_page(p);
-    }
 }
 
 struct page *__pcrh_lookup(char *suname, int dfid, u64 pgoff)

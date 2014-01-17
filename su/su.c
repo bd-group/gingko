@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 17:55:47 macan>
+ * Time-stamp: <2014-01-16 19:07:02 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -135,7 +135,7 @@ int su_write_meta(struct gingko_su *gs)
             gingko_err(su, "write %s failed w/ %s(%d)\n",
                        path, strerror(errno), errno);
             err = -errno;
-            goto out;
+            goto out_free;
         }
         bl += bw;
     } while (bl < len);
@@ -145,7 +145,8 @@ int su_write_meta(struct gingko_su *gs)
                  gs->sm.flags,
                  gs->sm.dfnr,
                  gs->sm.name);
-
+out_free:
+    xfree(smd);
 out:
     return err;
 }

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-12 01:41:42 macan>
+ * Time-stamp: <2014-01-17 10:06:04 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,11 +26,13 @@
 
 static inline void __page_get(struct page *p)
 {
+    gingko_err(su, "__page_get(%p) ref %d\n", p, atomic_read(&p->ref));
     atomic_inc(&p->ref);
 }
 
 static inline void __page_put(struct page *p)
 {
+    gingko_err(su, "__page_put(%p) ref %d\n", p, atomic_read(&p->ref));
     if (atomic_dec_return(&p->ref) < 0) {
         __free_page(p);
     }
@@ -70,8 +72,8 @@ struct page *__alloc_page(struct gingko_su *gs, int dfid, int flags)
                       (gs->files[dfid].dfh->l2p.ph.nr + 1));
         if (!le) {
             gingko_err(su, "xrealloc l2p array entry failed, no memory.\n");
-            p = ERR_PTR(-ENOMEM);
-            goto out;
+            err = -ENOMEM;
+            goto out_free;
         }
         gs->files[dfid].dfh->l2p.l2pa = le;
         le[gs->files[dfid].dfh->l2p.ph.nr].lid = L2P_LID_MAX;
@@ -81,9 +83,13 @@ struct page *__alloc_page(struct gingko_su *gs, int dfid, int flags)
 
     p->ph.flag = gs->conf.page_algo;
 
-    /* insert it to page cache */
     __page_get(p);
+
+    if (flags & SU_PAGE_ALLOC_NOINSERT) {
+        goto out;
+    }
     
+    /* insert it to page cache */
 retry:
     switch (__pcrh_insert(p)) {
     case 0:
@@ -102,11 +108,17 @@ retry:
         __page_put(p);
         __page_put(p);          /* double put as free */
         p = other;
+        if (flags & SU_PAGE_ALLOC_ADDL2P) {
+            gs->files[dfid].dfh->l2p.ph.nr--;
+        }
         break;
     }
     default:
         err = -EINTERNAL;
         __page_put(p);
+        if (flags & SU_PAGE_ALLOC_ADDL2P) {
+            gs->files[dfid].dfh->l2p.ph.nr--;
+        }
         goto out_free;
     }
 
@@ -134,7 +146,7 @@ void __free_page(struct page *p)
         __pcrh_remove(p);
     }
     xfree(p->data);
-
+    xfree(p->pi);
     xfree(p);
 }
 
@@ -185,8 +197,8 @@ int page_write(struct page *p, struct line *line, long lid,
     }
 
     /* copy line data to page data, record current offset */
-    if (p->coff + line->len > gs->conf.page_size) {
-        sched_yield();
+    if (p->coff + (p->pi->lhus * (p->pi->linenr + 1)) + line->len > 
+        gs->conf.page_size) {
         return -ENEWPAGE;
     }
     memcpy(p->data + p->coff, line->data, line->len);
@@ -212,7 +224,8 @@ int page_write(struct page *p, struct line *line, long lid,
     if (p->ph.status == SU_PH_CLEAN) {
         gs->files[p->dfid].dfh->l2p.l2pa[
             gs->files[p->dfid].dfh->l2p.ph.nr - 1].lid = lid;
-        gingko_err(su, "SET lid %ld @ %d\n", lid, gs->files[p->dfid].dfh->l2p.ph.nr - 1);
+        gingko_debug(su, "Mark Page Dirty for lid %ld @ L2P %d\n", lid, 
+                     gs->files[p->dfid].dfh->l2p.ph.nr - 1);
         p->ph.status = SU_PH_DIRTY;
     }
 
@@ -276,7 +289,7 @@ struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff)
     int err = 0, bl, br;
 
     df = &gs->files[dfid];
-    p = __alloc_page(gs, dfid, 0);
+    p = __alloc_page(gs, dfid, SU_PAGE_ALLOC_NOINSERT);
     if (IS_ERR(p)) {
         err = PTR_ERR(p);
         gingko_err(su, "__alloc_page() for pgoff 0x%lx failed w/ %s(%d)\n",
@@ -448,6 +461,7 @@ int __page_comp_lzo(struct page *p, struct gingko_su *gs, void *zdata)
     p->ph.zip_len = zlen;
     
 out:
+    xfree(workmem);
     return err;
 }
 
@@ -635,6 +649,7 @@ int page_sync(struct page *p, struct gingko_su *gs)
     for (i = 0; i < p->ph.lnr; i++) {
         xfree(p->pi->lharray[i]);
     }
+    xfree(p->pi->lharray);
     p->pi->lharray = NULL;
 
     /* TODO: update page's pgoff, remove it from hash table */
@@ -709,6 +724,7 @@ int page_read(struct gingko_su *gs, struct page *p, long lid,
     lh = p->pi->lha + (gs->files[p->dfid].dfh->md.l1fldnr + 1) *
         (lid - p->ph.startline);
     lh0 = (void *)lh;
+
     for (i = 0; i < lh0->len; i++) {
         gingko_debug(su, "For %ld LH %p Got FID %d offset %d\n",
                      lid, lh, lh[i + 1].l1fld, lh[i + 1].offset);
@@ -752,12 +768,16 @@ int page_read(struct gingko_su *gs, struct page *p, long lid,
         case UNPACK_DATAONLY:
         default:
             break;
+        case UNPACK_FNAME:
+            /* Bug-XXXX: we do NOT free user allocated name here */
+            fields[i].name = strdup(f->fld.name);
+            break;
         case UNPACK_ALL:
             fields[i].id = f->fld.id;
             fields[i].pid = f->fld.pid;
             fields[i].type = f->fld.type;
-            if (!fields[i].name)
-                fields[i].name = strdup(f->fld.name);
+            /* Bug-XXXX: we do NOT free user allocated name here */
+            fields[i].name = strdup(f->fld.name);
             break;
         }
 

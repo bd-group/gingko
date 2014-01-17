@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-10 02:51:49 macan>
+ * Time-stamp: <2014-01-16 09:16:11 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -99,6 +99,9 @@ struct field_2pack **su_l1fieldpack(struct field_2pack **fld, int *fldnr,
 
 /* New a field */
 struct field_2pack *su_new_field(u8 type, void *data, int dlen);
+
+/* Free fields' resources */
+void su_free_field_2pack(struct field_2pack **fld, int fldnr);
 
 /* Write a line to SU */
 int su_write(int suid, struct line* line, long lid);

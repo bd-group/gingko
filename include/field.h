@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-31 00:46:45 macan>
+ * Time-stamp: <2014-01-16 18:57:59 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -172,6 +172,10 @@ struct field_g
     u16 orig_id;
     u16 pid;
     u8 type;
+#define UNPACK_ALL              0x00
+#define UNPACK_DATAONLY         0x01
+#define UNPACK_FNAME            0x02
+    u8 flags;
 
     char *name;                 /* query can by on NAME */
     void *content;

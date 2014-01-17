@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-12 02:01:31 macan>
+ * Time-stamp: <2014-01-17 10:00:33 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -78,12 +78,11 @@ int page_sync(struct page *p, struct gingko_su *gs);
 struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff);
 void async_page_sync(struct page *p, struct gingko_su *gs);
 
-#define UNPACK_DATAONLY         0
-#define UNPACK_ALL              1
 int page_read(struct gingko_su *gs, struct page *p, long lid, 
               struct field_g fields[], int fldnr, int flag);
 
 #define SU_PAGE_ALLOC_ADDL2P    0x01
+#define SU_PAGE_ALLOC_NOINSERT  0x02
 struct page *__alloc_page(struct gingko_su *gs, int dfid, int flags);
 void __free_page(struct page *p);
 

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-12 02:00:03 macan>
+ * Time-stamp: <2014-01-17 10:26:26 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -123,6 +123,27 @@ int gingko_fina(void)
                    gingko_strerror(err), err);
         goto out;
     }
+
+    /* su cache fina */
+    {
+        struct gingko_su *gs;
+        struct hlist_node *pos, *n;
+        struct regular_hash *rh;
+        int i;
+
+        for (i = 0; i < g_mgr.gc->gsrh_size; i++) {
+            rh = g_mgr.gsrh + i;
+            xlock_lock(&rh->lock);
+            hlist_for_each_entry_safe(gs, pos, n, &rh->h, hlist) {
+                hlist_del_init(&gs->hlist);
+                __gs_put(gs);
+            }
+            xlock_unlock(&rh->lock);
+        }
+        xfree(g_mgr.gsrh);
+    }
+
+    xfree(g_mgr.gsu);
 
 out:
     return err;
@@ -297,13 +318,13 @@ void __free_su(struct gingko_su *gs)
     }
     
     xfree(gs->path);
-    xfree(gs->files);
 
     if (gs->files) {
         for (i = 0; i < gs->sm.dfnr; i++) {
             fina_dfile(&gs->files[i]);
         }
     }
+    xfree(gs->files);
 
     if (gs->smfd > 0) {
         fsync(gs->smfd);
@@ -326,13 +347,9 @@ static int __su_sync(struct gingko_su *gs)
 
     /* for each dfile, we should find the page */
     for (i = 0; i < gs->sm.dfnr; i++) {
-        struct page *p = get_page(gs, i, SU_PG_MAX_PGOFF);
+        struct page *p = __pcrh_lookup(gs->sm.name, i, SU_PG_MAX_PGOFF);
 
-        if (IS_ERR(p)) {
-            err = PTR_ERR(p);
-            gingko_warning(api, "get_page() DF %d failed w/ %s(%d)\n",
-                           i, gingko_strerror(err), err);
-        } else {
+        if (p) {
         retry:
             xrwlock_wlock(&p->rwlock);
             err = page_sync(p, gs);
@@ -346,6 +363,7 @@ static int __su_sync(struct gingko_su *gs)
                            i, gingko_strerror(err), err);
                 goto out;
             }
+            put_page(p);
         }
     }
 out:
@@ -807,6 +825,18 @@ struct field_2pack **su_l1fieldpack(struct field_2pack **fld, int *fldnr,
     return p;
 }
 
+void su_free_field_2pack(struct field_2pack **fld, int fldnr)
+{
+    int i;
+
+    for (i = 0; i < fldnr; i++) {
+        if (fld[i]->type == GINGKO_STRING) {
+            xfree(fld[i]->data);
+        }
+        xfree(fld[i]);
+    }
+}
+
 /* Build a line
  */
 int su_linepack(struct line *line, struct field_2pack *flds[], int l1fldnr)
@@ -919,7 +949,9 @@ retry:
                     goto retry;
                 } else if (err == -ENEWPAGE) {
                     put_page(p);
-                    async_page_sync(p, gid->gs);
+                    /* async_page_sync(p, gid->gs); */
+                    /* sched_yield(); */
+                    page_sync(p, gid->gs);
                     goto retry;
                 }
                 gingko_err(api, "page_write() failed w/ %s(%d)\n",
@@ -1029,7 +1061,7 @@ int su_get(int suid, long lid, struct field_g fields[], int fldnr)
             err = PTR_ERR(p);
             gingko_err(su, "page_load() failed w/ %s(%d)\n",
                        gingko_strerror(err), err);
-            goto out;
+            goto out_put;
         }
         dump_page(p);
     }
@@ -1039,9 +1071,11 @@ int su_get(int suid, long lid, struct field_g fields[], int fldnr)
     if (err) {
         gingko_err(su, "page_read(lid=%ld) failed w/ %s(%d)\n",
                    lid, gingko_strerror(err), err);
-        goto out;
+        goto out_put;
     }
 
+out_put:
+    put_page(p);
 out:
     return err;
 }

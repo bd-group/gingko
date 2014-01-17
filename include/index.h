@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-27 14:31:12 macan>
+ * Time-stamp: <2014-01-16 14:34:39 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -108,6 +108,8 @@ struct pageindex
 
     u32 linenr;
     u32 fldstatlen;
+    u32 lhus;
+
     struct fldstat **stats;
     struct lineheader **lharray;
 
