@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-17 10:26:26 macan>
+ * Time-stamp: <2014-01-18 22:46:25 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -949,9 +949,8 @@ retry:
                     goto retry;
                 } else if (err == -ENEWPAGE) {
                     put_page(p);
-                    /* async_page_sync(p, gid->gs); */
-                    /* sched_yield(); */
-                    page_sync(p, gid->gs);
+                    async_page_sync(p, gid->gs);
+                    sched_yield();
                     goto retry;
                 }
                 gingko_err(api, "page_write() failed w/ %s(%d)\n",
@@ -1061,10 +1060,11 @@ int su_get(int suid, long lid, struct field_g fields[], int fldnr)
             err = PTR_ERR(p);
             gingko_err(su, "page_load() failed w/ %s(%d)\n",
                        gingko_strerror(err), err);
-            goto out_put;
+            goto out;
         }
         dump_page(p);
     }
+    __pc_lru_update(p);
 
     /* Step 3: find lid in page */
     err = page_read(gid->gs, p, lid, fields, fldnr, UNPACK_ALL);

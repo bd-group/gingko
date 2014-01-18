@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-17 15:30:57 macan>
+ * Time-stamp: <2014-01-19 00:48:50 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,10 +33,11 @@ void __dump_f2p(struct field_2pack **fld, int fldnr)
     }
 }
 
-int __gen_dx_rz(int suidw, struct field schemas[], int schlen, int lnr)
+int __gen_dx_rz(int suidw, struct field schemas[], int schlen, int lnr, long *wb)
 {
     int i, j, err = 0;
 
+    *wb = 0;
     for (i = 0; i < lnr; i++) {
         struct field_2pack **flds = NULL, **t1;
         struct line l;
@@ -53,6 +54,7 @@ int __gen_dx_rz(int suidw, struct field schemas[], int schlen, int lnr)
                     goto out;
                 }
                 flds = t1;
+                *wb += 8;
                 break;
             case GINGKO_INT32:
                 t1 = su_l1fieldpack(flds, &fldnr, su_new_field(GINGKO_INT32,
@@ -63,6 +65,7 @@ int __gen_dx_rz(int suidw, struct field schemas[], int schlen, int lnr)
                     goto out;
                 }
                 flds = t1;
+                *wb += 4;
                 break;
             case GINGKO_STRING:
             {
@@ -82,6 +85,7 @@ int __gen_dx_rz(int suidw, struct field schemas[], int schlen, int lnr)
                     goto out;
                 }
                 flds = t1;
+                *wb += strlen(str);
                 break;
             }
             }
@@ -116,11 +120,12 @@ int __do_write(struct field *schemas, int schlen, char *supath, int wnr)
 {
     int err = 0, suidw;
     struct su_conf sc = {
-        /* .page_size = SU_PAGE_SIZE, */
-        .page_size = 64 * 1024,
+        .page_size = SU_PAGE_SIZE,
+        /* .page_size = 2 * 1024, */
         .page_algo = SU_PH_COMP_LZO,
     };
     struct timeval begin, end;
+    long wb;
 
     suidw = su_create(&sc, "./first_su", schemas, schlen);
     if (suidw < 0) {
@@ -131,15 +136,18 @@ int __do_write(struct field *schemas, int schlen, char *supath, int wnr)
     printf("Create SU id=%d\n", suidw);
 
     gettimeofday(&begin, NULL);
-    err = __gen_dx_rz(suidw, schemas, schlen, wnr);
+    err = __gen_dx_rz(suidw, schemas, schlen, wnr, &wb);
     if (err) {
         printf("__gen_dx_rz() failed w/ %d\n", err);
         goto out_close;
     }
     gettimeofday(&end, NULL);
-    printf("[WR] DX_RZ Rate %lf\n", 
+    printf("[WR] DX_RZ WBytes=%ld Rate=%lf BW=%lf KB/s\n",
+           wb, 
            wnr / ((end.tv_sec - begin.tv_sec) 
-                  + (end.tv_usec - begin.tv_usec) / 1000000.0));
+                  + (end.tv_usec - begin.tv_usec) / 1000000.0),
+           wb / ((end.tv_sec - begin.tv_sec) 
+                 + (end.tv_usec - begin.tv_usec) / 1000000.0) / 1024);
 
 out_close:
     su_close(suidw);
@@ -147,7 +155,7 @@ out:
     return err;
 }
 
-int __read_dx_rz(int suidr, int lids[], int lnr)
+int __read_dx_rz(int suidr, int lids[], int lnr, long *rb)
 {
     struct field_g fields[8] = {
         {.id = 0, .flags = UNPACK_FNAME,},
@@ -160,14 +168,18 @@ int __read_dx_rz(int suidr, int lids[], int lnr)
         {.id = 42},
     };
     int i, j, err = 0;
-
+    
+    *rb = 0;
     for (i = 0; i < lnr; i++) {
+        char str[256];
+        
         err = su_get(suidr, lids[i], fields, 8);
         if (err) {
             printf("su_get() failed w/ %d\n", err);
             goto out;
         }
         for (j = 0; j < 8; j++) {
+            *rb += fields[j].dlen;
             if (fields[j].type == GINGKO_STRING) {
 #if 0
                 printf("LID=%d IDX=%d -> {id=%d pid=%d type=%s dlen=%d name=%s "
@@ -181,11 +193,17 @@ int __read_dx_rz(int suidr, int lids[], int lnr)
                        fields[j].dlen,
                        (char *)fields[j].content);
 #endif
+                sprintf(str, "%s=%d.%d.%d.%d", fields[j].name,
+                        i % 256, i % 256, i % 256, i % 256);
+                if (strncmp(str, fields[j].content, fields[j].dlen) != 0) {
+                    err = -EINTERNAL;
+                }
                 xfree(fields[j].content);
             } else {
+#if 0
                 int *pi = (int *)&fields[j].content;
                 double *pd = (double *)&fields[j].content;
-#if 0                
+
                 printf("LID=%d IDX=%d -> {id=%d pid=%d type=%s dlen=%d name=%s "
                        "content=[%d|%ld|%lf]}\n",
                        lids[i], j,
@@ -198,6 +216,15 @@ int __read_dx_rz(int suidr, int lids[], int lnr)
                        (u64)fields[j].content,
                        *pd);
 #endif
+                if (fields[j].type == GINGKO_INT64) {
+                    long *pl = (long *)&fields[j].content;
+                    if (*pl != fields[j].id)
+                        err = -EINTERNAL;
+                } else if (fields[j].type == GINGKO_INT32) {
+                    int *pi = (int *)&fields[j].content;
+                    if (*pi != fields[j].id)
+                        err = -EINTERNAL;
+                }
             }
             if (fields[j].flags == UNPACK_ALL ||
                 fields[j].flags == UNPACK_FNAME) {
@@ -215,13 +242,21 @@ out:
 int __do_read(char *supath, int rnr)
 {
     int err = 0, suidr;
-    int lids[rnr], i;
+    int *lids, i;
+    struct timeval begin, end;
+    long rb;
 
+    lids = xmalloc(sizeof(int) * rnr);
+    if (!lids) {
+        return 0;
+    }
     for (i = 0; i < rnr; i++) {
         lids[i] = i;
     }
     
+    gingko_su_tracing_flags = GINGKO_ERR | GINGKO_WARN | GINGKO_INFO | GINGKO_DEBUG;
     suidr = su_open("./first_su", SU_OPEN_RDONLY, NULL);
+    gingko_su_tracing_flags = GINGKO_ERR | GINGKO_WARN;
     if (suidr < 0) {
         printf("su_open() failed w/ %d\n", suidr);
         err = suidr;
@@ -229,11 +264,19 @@ int __do_read(char *supath, int rnr)
     }
     printf("Open   SU id=%d\n", suidr);
 
-    err = __read_dx_rz(suidr, lids, rnr);
+    gettimeofday(&begin, NULL);
+    err = __read_dx_rz(suidr, lids, rnr, &rb);
     if (err) {
         printf("__read_dx_rz() failed w/ %d\n", err);
         goto out_close;
     }
+    gettimeofday(&end, NULL);
+    printf("[RD] DX_RZ RBytes=%ld Rate=%lf BW=%lf KB/s\n",
+           rb, 
+           rnr / ((end.tv_sec - begin.tv_sec) 
+                  + (end.tv_usec - begin.tv_usec) / 1000000.0),
+           rb / ((end.tv_sec - begin.tv_sec) 
+                 + (end.tv_usec - begin.tv_usec) / 1000000.0) / 1024);
     
 out_close:
     su_close(suidr);
@@ -335,29 +378,50 @@ int main(int argc, char *argv[])
          .codec = FLD_CODEC_NONE, .cidnr = 0},
     };
 
-    /* gingko_api_tracing_flags = 0xffffffff; */
-    /* gingko_su_tracing_flags = 0xffffffff; */
-    /* gingko_index_tracing_flags = 0xffffffff; */
+    gingko_api_tracing_flags = GINGKO_ERR | GINGKO_WARN;
+    gingko_su_tracing_flags = GINGKO_ERR | GINGKO_WARN;
+    gingko_index_tracing_flags = GINGKO_ERR | GINGKO_WARN;
     
-    err = gingko_init(NULL);
+    struct gingko_conf gc = {
+        .max_suid = GINGKO_MAX_SUID,
+        .gsrh_size = GINGKO_GSRH_SIZE,
+        .pcrh_size = GINGKO_PCRH_SIZE,
+        .pc_memory = 1024 * 1024 * 1024,
+    };
+
+    err = gingko_init(&gc);
     if (err) {
         printf("gingko_init() failed w/ %d\n", err);
         goto out;
     }
-    if (argc > 1) {
-        err = __do_write(schemas, 44, "./first_su", atoi(argv[1]));
-        if (err) {
-            printf("__do_write() failed w/ %d\n", err);
-            goto out;
+    if (argc > 2) {
+        if (strcmp(argv[1], "w") == 0) {
+            err = __do_write(schemas, 44, "./first_su", atoi(argv[2]));
+            if (err) {
+                printf("__do_write() failed w/ %d\n", err);
+                goto out_fina;
+            }
+        } else if (strcmp(argv[1], "r") == 0) {
+            err = __do_read("./first_su", atoi(argv[2]));
+            if (err) {
+                printf("__do_read() failed w/ %d\n", err);
+                goto out_fina;
+            }
+        } else if (strcmp(argv[1], "rw") == 0) {
+            err = __do_write(schemas, 44, "./first_su", atoi(argv[2]));
+            if (err) {
+                printf("__do_write() failed w/ %d\n", err);
+                goto out_fina;
+            }
+            err = __do_read("./first_su", atoi(argv[2]));
+            if (err) {
+                printf("__do_read() failed w/ %d\n", err);
+                goto out_fina;
+            }
         }
     }
 
-    err = __do_read("./first_su", atoi(argv[1]));
-    if (err) {
-        printf("__do_read() failed w/ %d\n", err);
-        goto out;
-    }
-
+out_fina:
     err = gingko_fina();
     if (err) {
         printf("gingko_fina() failed w/ %d\n", err);

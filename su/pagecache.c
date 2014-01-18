@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-17 10:23:35 macan>
+ * Time-stamp: <2014-01-19 00:17:08 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,6 +36,13 @@ struct page_cache
 
     struct list_head async_page_list;
     xlock_t async_page_lock;
+
+    struct list_head lru_list;
+    xlock_t lru_lock;
+    
+    /* memory limit */
+    atomic64_t total_usable;
+    atomic64_t current_used;
 };
 
 static struct page_cache gpc;
@@ -49,11 +56,36 @@ struct async_psync
 
 static void *__async_page_sync_main(void *args);
 
+/* User must NOT hold the page lock
+ */
+void __pc_lru_update(struct page *p)
+{
+    xlock_lock(&gpc.lru_lock);
+    xrwlock_wlock(&p->rwlock);
+    list_del_init(&p->list);
+    list_add_tail(&p->list, &gpc.lru_list);
+    xrwlock_wunlock(&p->rwlock);
+    xlock_unlock(&gpc.lru_lock);
+}
+
+void __pc_lru_remove(struct page *p)
+{
+    xlock_lock(&gpc.lru_lock);
+    xrwlock_wlock(&p->rwlock);
+    list_del_init(&p->list);
+    xrwlock_wunlock(&p->rwlock);
+    xlock_unlock(&gpc.lru_lock);
+}
+
 int pagecache_init(struct gingko_conf *conf)
 {
     int err = 0, i;
 
     memset(&gpc, 0, sizeof(gpc));
+    if (conf->pc_memory)
+        atomic64_set(&gpc.total_usable, conf->pc_memory);
+    else
+        atomic64_set(&gpc.total_usable, GINGKO_PC_MEMORY);
     gpc.async_page_sync_thread_nr = conf->async_page_sync_thread_nr;
     if (!gpc.async_page_sync_thread_nr)
         gpc.async_page_sync_thread_nr = GINGKO_ASYNC_PSYNC_TNR;
@@ -69,6 +101,8 @@ int pagecache_init(struct gingko_conf *conf)
 
     INIT_LIST_HEAD(&gpc.async_page_list);
     xlock_init(&gpc.async_page_lock);
+    INIT_LIST_HEAD(&gpc.lru_list);
+    xlock_init(&gpc.lru_lock);
 
     xlock_init(&gpc.lock);
     gpc.pcsize = conf->pcrh_size;
@@ -136,7 +170,7 @@ static inline int __calc_pcrh_slot(char *suname, int dfid, u64 pgoff)
 
 static inline void __page_get(struct page *p)
 {
-    gingko_err(su, "__page_get(%p) ref %d\n", p, atomic_read(&p->ref));
+    gingko_debug(su, "__page_get(%p) ref %d\n", p, atomic_read(&p->ref));
     atomic_inc(&p->ref);
 }
 
@@ -144,7 +178,7 @@ void __free_page(struct page *p);
 
 static inline void __page_put(struct page *p)
 {
-    gingko_err(su, "__page_put(%p) ref %d\n", p, atomic_read(&p->ref));
+    gingko_debug(su, "__page_put(%p) ref %d\n", p, atomic_read(&p->ref));
     if (atomic_dec_return(&p->ref) < 0) {
         __free_page(p);
     }
@@ -167,7 +201,7 @@ int pagecache_fina()
                 GINGKO_BUGON(info);
             }
             hlist_del_init(&p->hlist);
-            gingko_err(su, "PAGE %p ref %d\n", p, atomic_read(&p->ref));
+            gingko_debug(su, "PAGE %p ref %d\n", p, atomic_read(&p->ref));
             __page_put(p);
         }
         xlock_unlock(&rh->lock);
@@ -278,6 +312,7 @@ struct page *get_page(struct gingko_su *gs, int dfid, u64 pgoff)
             goto out;
         }
     }
+    __pc_lru_update(p);
     
     /* the page->ref has already inc-ed */
 out:
@@ -310,6 +345,8 @@ void async_page_sync(struct page *p, struct gingko_su *gs)
     xrwlock_wunlock(&p->rwlock);
     if (added) {
         sem_post(&gpc.async_page_sync_sem);
+    } else {
+        xfree(ap);
     }
 }
 
@@ -339,17 +376,26 @@ static void *__async_page_sync_main(void *args)
             ap = list_first_entry(&gpc.async_page_list, 
                                   struct async_psync, list);
         }
+        if (ap) {
+            list_del_init(&ap->list);
+        }
         xlock_unlock(&gpc.async_page_lock);
         if (ap) {
+        retry:
             xrwlock_wlock(&ap->p->rwlock);
             err = page_sync(ap->p, ap->gs);
             xrwlock_wunlock(&ap->p->rwlock);
             if (err) {
+                if (err == -EAGAIN) {
+                    sched_yield();
+                    goto retry;
+                }
                 gingko_err(api, "page_sync() SU %s DF %d PGOFF %lx "
                            "failed w/ %s(%d)\n",
                            ap->p->suname, ap->p->dfid, ap->p->pgoff,
                            gingko_strerror(err), err);
             }
+            xfree(ap);
         }
     }
 
@@ -357,3 +403,45 @@ static void *__async_page_sync_main(void *args)
     pthread_exit(0);
 }
 
+/* Return Value:
+ * 0 => ok to alloc
+ * <0 => reject w/ error
+ */
+int pagecache_memlimit(int new_size)
+{
+    int err = 0;
+retry:
+    if (new_size + atomic64_read(&gpc.current_used) >
+        atomic64_read(&gpc.total_usable)) {
+        struct page *p, *n;
+        int stop = 0;
+        
+        /* try to free some pages */
+        xlock_lock(&gpc.lru_lock);
+        list_for_each_entry_safe(p, n, &gpc.lru_list, list) {
+            xrwlock_wlock(&p->rwlock);
+            if (atomic_read(&p->ref) == 0 && IS_PAGE_FREEABLE(p)) {
+                list_del_init(&p->list);
+                stop = 1;
+            }
+            xrwlock_wunlock(&p->rwlock);
+            if (stop) break;
+        }
+        xlock_unlock(&gpc.lru_lock);
+        if (stop) {
+            __page_put(p);
+        }
+        sched_yield();
+        goto retry;
+    } else {
+        /* ok to allocate, and update current_used */
+        atomic64_add(new_size, &gpc.current_used);
+    }
+
+    return err;
+}
+
+void pagecache_raise_memlimit(int size)
+{
+    atomic64_sub(size, &gpc.current_used);
+}

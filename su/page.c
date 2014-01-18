@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-17 10:06:04 macan>
+ * Time-stamp: <2014-01-19 01:00:55 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,13 +26,13 @@
 
 static inline void __page_get(struct page *p)
 {
-    gingko_err(su, "__page_get(%p) ref %d\n", p, atomic_read(&p->ref));
+    gingko_debug(su, "__page_get(%p) ref %d\n", p, atomic_read(&p->ref));
     atomic_inc(&p->ref);
 }
 
 static inline void __page_put(struct page *p)
 {
-    gingko_err(su, "__page_put(%p) ref %d\n", p, atomic_read(&p->ref));
+    gingko_debug(su, "__page_put(%p) ref %d\n", p, atomic_read(&p->ref));
     if (atomic_dec_return(&p->ref) < 0) {
         __free_page(p);
     }
@@ -62,6 +62,7 @@ struct page *__alloc_page(struct gingko_su *gs, int dfid, int flags)
     p->pgoff = SU_PG_MAX_PGOFF;
     INIT_HLIST_NODE(&p->hlist);
     xrwlock_init(&p->rwlock);
+    INIT_LIST_HEAD(&p->list);
     
     /* TODO: init the page meta data */
     if (flags & SU_PAGE_ALLOC_ADDL2P) {
@@ -79,17 +80,19 @@ struct page *__alloc_page(struct gingko_su *gs, int dfid, int flags)
         le[gs->files[dfid].dfh->l2p.ph.nr].lid = L2P_LID_MAX;
         le[gs->files[dfid].dfh->l2p.ph.nr].pgoff = L2P_PGOFF_MAX;
         gs->files[dfid].dfh->l2p.ph.nr++;
+        /* save idx to .pid */
+        p->pid = gs->files[dfid].dfh->l2p.ph.nr - 1;
     }
 
     p->ph.flag = gs->conf.page_algo;
-
-    __page_get(p);
 
     if (flags & SU_PAGE_ALLOC_NOINSERT) {
         goto out;
     }
     
     /* insert it to page cache */
+    __page_get(p);
+
 retry:
     switch (__pcrh_insert(p)) {
     case 0:
@@ -135,16 +138,21 @@ void __free_page(struct page *p)
     if (!p)
         return;
 
-    gingko_verbose(su, "Free PAGE %p\n", p);
-
     if (atomic_read(&p->ref) >= 0) {
         GINGKO_BUGON("Invalid PAGE reference.");
+        /* for multi-threads, this may occur */
+        return;
     }
+
+    gingko_verbose(su, "Free PAGE %p\n", p);
 
     /* TODO: free any resource */
     if (!hlist_unhashed(&p->hlist)) {
         __pcrh_remove(p);
     }
+    __pc_lru_remove(p);
+    pagecache_raise_memlimit(p->ph.orig_len);
+        
     xfree(p->data);
     xfree(p->pi);
     xfree(p);
@@ -186,14 +194,22 @@ int page_write(struct page *p, struct line *line, long lid,
     }
     
     if (!p->data) {
-        void *x = xzalloc(gs->conf.page_size);
-        if (!x) {
-            gingko_err(su, "xzalloc() PAGE data region %dB failed, "
-                       "no memory.\n", gs->conf.page_size);
-            err = -ENOMEM;
+        /* check if we can alloc memory */
+        err = pagecache_memlimit(gs->conf.page_size);
+        if (!err) {
+            void *x = xzalloc(gs->conf.page_size);
+            if (!x) {
+                gingko_err(su, "xzalloc() PAGE data region %dB failed, "
+                           "no memory.\n", gs->conf.page_size);
+                err = -ENOMEM;
+                goto out;
+            }
+            p->data = x;
+        } else {
+            gingko_err(su, "Gingko PageCache reject this allocation %s(%d)\n",
+                       gingko_strerror(err), err);
             goto out;
         }
-        p->data = x;
     }
 
     /* copy line data to page data, record current offset */
@@ -328,6 +344,16 @@ struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff)
         }
         bl += br;
     } while (bl < sizeof(p->ph));
+    /* reset page status to WBDONE to reject any modifications */
+    p->ph.status = SU_PH_WBDONE;
+    
+    err = pagecache_memlimit(p->ph.orig_len);
+    if (err) {
+        gingko_err(su, "Memory not enough (want to alloc %d B)\n",
+                   p->ph.orig_len);
+        err = -ENOMEM;
+        goto out_unlock;
+    }
     
     /* Step 2: read the page data */
     data = xmalloc(p->ph.zip_len);
@@ -347,7 +373,8 @@ struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff)
             xfree(data);
             goto out_unlock;
         } else if (br == 0) {
-            gingko_err(su, "pread page data EOF\n");
+            gingko_err(su, "pread page data EOF(%ld)\n",
+                       pgoff + sizeof(p->ph) + bl);
             err = -EBADF;
             xfree(data);
             goto out_unlock;
@@ -661,8 +688,7 @@ int page_sync(struct page *p, struct gingko_su *gs)
     if (err) {
         GINGKO_BUGON("Page cache conflicts?!");
     }
-    gs->files[p->dfid].dfh->l2p.l2pa[
-        gs->files[p->dfid].dfh->l2p.ph.nr - 1].pgoff = p->pgoff;
+    gs->files[p->dfid].dfh->l2p.l2pa[p->pid].pgoff = p->pgoff;
 
     err = df_append_l2p(gs, &gs->files[p->dfid]);
     if (err) {

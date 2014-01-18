@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-16 09:16:11 macan>
+ * Time-stamp: <2014-01-17 18:37:19 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -66,12 +66,15 @@ extern u32 gingko_api_tracing_flags;
 #define GINGKO_GSRH_SIZE                2048
 #define GINGKO_PCRH_SIZE                (1024 * 1024) /* 64GB? */
 #define GINGKO_ASYNC_PSYNC_TNR          4
+#define GINGKO_PC_MEMORY                (2 * 1024 * 1024 * 1024L)
 struct gingko_conf
 {
     int max_suid;
     int gsrh_size;
     int pcrh_size;
     int async_page_sync_thread_nr;
+
+    int pc_memory;
 };
 
 int gingko_init(struct gingko_conf *);
