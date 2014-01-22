@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-18 23:54:16 macan>
+ * Time-stamp: <2014-01-21 20:30:11 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -390,14 +390,14 @@ out_free:
     goto out_close;
 }
 
-int df_append_l2p(struct gingko_su *gs, struct dfile *df)
+int df_append_l2p(struct gingko_su *gs, struct dfile *df, int pid)
 {
     char path[4096];
-    int err = 0, bl, bw, wnr;
+    int err = 0, bl, bw;
 
     /* get df fd now */
     xlock_lock(&df->lock);
-    if (df->fds[SU_L2P_ID] == 0) {
+    if (unlikely(df->fds[SU_L2P_ID] == 0)) {
         sprintf(path, "%s/%s", gs->path, SU_L2P_FILENAME);
         df->fds[SU_L2P_ID] = open(path, O_RDWR);
         if (df->fds[SU_L2P_ID] < 0) {
@@ -407,14 +407,17 @@ int df_append_l2p(struct gingko_su *gs, struct dfile *df)
             goto out_unlock;
         }
     }
-
-    wnr = df->dfh->l2p.ph.nr - df->dfh->l2p.ph.rnr;
+    if (pid > df->dfh->l2p.ph.nr - 1) {
+        goto out_unlock;
+    }
+    
     bl = 0;
     do {
         bw = pwrite(df->fds[SU_L2P_ID], 
-                    (void *)(df->dfh->l2p.l2pa + df->dfh->l2p.ph.rnr) + bl,
-                    wnr * sizeof(struct l2p_entry) - bl,
-                    (df->dfh->l2p.ph.rnr + 1) * sizeof(struct l2p_entry) + bl);
+                    (void *)(df->dfh->l2p.l2pa + pid) + bl,
+                    sizeof(struct l2p_entry) - bl,
+                    sizeof(struct l2p_header) + 
+                    pid * sizeof(struct l2p_entry) + bl);
         if (bw < 0) {
             gingko_err(su, "write l2p array failed w/ %s(%d)\n",
                        strerror(errno), errno);
@@ -422,8 +425,7 @@ int df_append_l2p(struct gingko_su *gs, struct dfile *df)
             goto out_unlock;
         }
         bl += bw;
-    } while (bl < wnr * sizeof(struct l2p_entry));
-    df->dfh->l2p.ph.rnr = df->dfh->l2p.ph.nr;
+    } while (bl < sizeof(struct l2p_entry));
 
     bl = 0;
     do {
@@ -439,14 +441,11 @@ int df_append_l2p(struct gingko_su *gs, struct dfile *df)
     } while (bl < sizeof(df->dfh->l2p.ph));
 
     {
-        int i;
-        
-        gingko_debug(su, "Write df %p (nr %u rnr %u)\n",
-                     df, df->dfh->l2p.ph.nr, df->dfh->l2p.ph.rnr);
-        for (i = 0; i < df->dfh->l2p.ph.nr; i++) {
-            gingko_debug(su, " L2P Entry %5d lid %ld -> pgoff %lu\n",
-                         i, df->dfh->l2p.l2pa[i].lid,
-                         df->dfh->l2p.l2pa[i].pgoff);
+        gingko_debug(su, "W L2P Entry %5d lid %ld -> pgoff %lu\n",
+                     pid, df->dfh->l2p.l2pa[pid].lid,
+                     df->dfh->l2p.l2pa[pid].pgoff);
+        if (df->dfh->l2p.l2pa[pid].pgoff == 0) {
+            GINGKO_BUGON("BAD pgoff 0.");
         }
     }
 
@@ -456,7 +455,28 @@ out_unlock:
     return err;
 }
 
-u64 __l2p_lookup_pgoff(struct gingko_su *gs, struct dfile *df, long lid)
+static int __l2p_comp(const void *p1, const void *p2)
+{
+    struct l2p_mentry *l1 = (struct l2p_mentry *)p1;
+    struct l2p_mentry *l2 = (struct l2p_mentry *)p2;
+    int r = 0;
+
+    if ((long)(l1->lid - l2->lid) *
+        (long)(l1->lid + l1->lnr - l2->lid - l2->lnr) <= 0) r = 0;
+    else if (l1->lid < l2->lid) r = -1;
+    else r = 1;
+
+#if 0
+    gingko_debug(su, "COMP l1{%ld,%ld,%d} vs l2{%ld,%ld,%d} => %d\n",
+                 l1->lid, l1->pgoff, l1->lnr,
+                 l2->lid, l2->pgoff, l2->lnr, r);
+#endif
+
+    return r;
+}
+
+static u64 __l2p_lookup_pgoff_slow(struct gingko_su *gs, 
+                                   struct dfile *df, long lid)
 {
     u64 pgoff = L2P_PGOFF_MAX;
     int i;
@@ -477,6 +497,45 @@ u64 __l2p_lookup_pgoff(struct gingko_su *gs, struct dfile *df, long lid)
     if (pgoff == L2P_PGOFF_MAX) {
         /* try to find in the last page */
         pgoff = df->dfh->l2p.l2pa[i - 1].pgoff;
+    }
+
+out:
+    return pgoff;
+}
+
+u64 __l2p_lookup_pgoff(struct gingko_su *gs, struct dfile *df, long lid)
+{
+    struct l2p_mentry key = {
+        .lid = lid,
+        .pgoff = L2P_PGOFF_MAX,
+        .lnr = 1UL,
+    }, *r;
+    u64 pgoff = L2P_PGOFF_MAX;
+    int i;
+
+    if (!df->dfh->l2p.l2pm) {
+        df->dfh->l2p.l2pm = xmalloc(sizeof(key) * df->dfh->l2p.ph.nr);
+        if (!df->dfh->l2p.l2pm) {
+            /* fallback to slow search */
+            return __l2p_lookup_pgoff_slow(gs, df, lid);
+        }
+        for (i = 0; i < df->dfh->l2p.ph.nr; i++) {
+            df->dfh->l2p.l2pm[i].lid = df->dfh->l2p.l2pa[i].lid;
+            df->dfh->l2p.l2pm[i].pgoff = df->dfh->l2p.l2pa[i].pgoff;
+            if (i + 1 < df->dfh->l2p.ph.nr)
+                df->dfh->l2p.l2pm[i].lnr =
+                    df->dfh->l2p.l2pa[i + 1].lid - df->dfh->l2p.l2pa[i].lid;
+            else
+                df->dfh->l2p.l2pm[i].lnr = -1U;
+        }
+    }
+    
+    r = bsearch(&key, df->dfh->l2p.l2pm, df->dfh->l2p.ph.nr,
+                sizeof(key), __l2p_comp);
+    if (r == NULL) {
+        goto out;
+    } else {
+        pgoff = r->pgoff;
     }
 
 out:

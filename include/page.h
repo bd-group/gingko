@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-19 00:52:44 macan>
+ * Time-stamp: <2014-01-22 08:54:05 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@ struct pageheader
 #define SU_PH_COMP_SNAPPY       1
 #define SU_PH_COMP_LZO          2
 #define SU_PH_COMP_ZLIB         3
+#define SU_PH_COMP_LZ4          4
     u8 flag;
 #define SU_PH_CLEAN             0
 #define SU_PH_DIRTY             1

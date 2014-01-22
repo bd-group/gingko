@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-25 16:33:46 macan>
+ * Time-stamp: <2014-01-21 11:02:31 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -68,10 +68,20 @@ struct l2p_entry
     u64 pgoff;
 };
 
+/* memory structure for fast lookup */
+struct l2p_mentry
+{
+    u64 lid;
+    u64 pgoff;
+    u32 lnr;
+};
+
 struct pageindex_l2p
 {
     struct l2p_header ph;
     struct l2p_entry *l2pa;
+
+    struct l2p_mentry *l2pm;
 };
 
 struct df_header 

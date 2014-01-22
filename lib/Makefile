@@ -2,7 +2,7 @@
 # Copyright (c) 2009 Ma Can <ml.macana@gmail.com>
 #                           <macan@ncic.ac.cn>
 #
-# Time-stamp: <2013-09-18 14:59:37 macan>
+# Time-stamp: <2014-01-21 10:22:12 macan>
 #
 # This is the makefile for GINGKO project.
 #
@@ -24,4 +24,4 @@ gingko_lib : $(LIB_AR_SOURCE:.c=.o)
 
 clean : 
 	-@rm -rf $(LIB_AR_SOURCE:.c=.o)
-	-@rm -rf *.a *.so
+	-@rm -rf *.a *.so *.so.profile

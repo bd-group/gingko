@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-18 22:08:48 macan>
+ * Time-stamp: <2014-01-21 19:50:39 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ extern struct gingko_manager g_mgr;
 int df_read_meta(struct gingko_su *gs, struct dfile *df);
 int df_write_meta(struct gingko_su *gs, struct dfile *df, int write_schema);
 int df_write_l2p(struct gingko_su *gs, struct dfile *df);
-int df_append_l2p(struct gingko_su *gs, struct dfile *df);
+int df_append_l2p(struct gingko_su *gs, struct dfile *df, int pid);
 int df_read_l2p(struct gingko_su *gs, struct dfile *df);
 u64 __l2p_lookup_pgoff(struct gingko_su *gs, struct dfile *df, long lid);
 
@@ -43,13 +43,17 @@ int init_dfile(struct gingko_su *gs, struct field schemas[], int schelen,
 void fina_dfile(struct dfile *df);
 
 int verify_schema(struct gingko_su *gs, struct field schemas[], int schelen);
-typedef void (*tfunc)(void *arg);
-void __pre_trav_schemas(struct field_t *root, tfunc cb);
-void __post_trav_schemas(struct field_t *root, tfunc cb);
-void __free_schema(void *arg);
+typedef void (*tfunc)(void *arg, void *arg1);
+void __pre_trav_schemas(struct field_t *root, tfunc cb, void *arg1);
+void __post_trav_schemas(struct field_t *root, tfunc cb, void *arg1);
+void __free_schema(void *arg, void *arg1);
 
-struct field_t *__find_field_t_by_name(struct field_t *root, char *name);
-struct field_t *__find_field_t(struct field_t *root, int id);
+int __init_fc(struct gingko_su *gs);
+void __fina_fc(struct gingko_su *gs);
+int __insert_fc(struct field_t *f, struct gingko_su *gs);
+
+struct field_t *find_field_by_id(struct gingko_su *gs, int id);
+struct field_t *find_field_by_name(struct gingko_su *gs, char *name);
 
 struct field_t *alloc_field_t(int type);
 int linepack_primitive(struct line *line, void *data, int dlen);

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-31 04:59:06 macan>
+ * Time-stamp: <2014-01-21 17:13:15 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -145,6 +145,7 @@ out_free:
     goto out;
 }
 
+static inline 
 struct field_t *__find_field_t(struct field_t *root, int id)
 {
     struct field_t *target = NULL;
@@ -167,6 +168,7 @@ out:
     return target;
 }
 
+static inline
 struct field_t *__find_field_t_by_name(struct field_t *root, char *name)
 {
     struct field_t *target = NULL;
@@ -189,7 +191,76 @@ out:
     return target;
 }
 
-void __print_schema(void *arg)
+int __init_fc(struct gingko_su *gs)
+{
+    int err = 0;
+    
+    if (!gs->conf.fc_size)
+        gs->conf.fc_size = SU_FC_SIZE;
+    gs->fc = xzalloc(sizeof(*gs->fc) * gs->conf.fc_size);
+    if (!gs->fc) {
+        gingko_err(su, "xzalloc(%d * FC) failed\n", 
+                   gs->conf.fc_size);
+        err = -ENOMEM;
+        goto out;
+    }
+
+out:
+    return err;
+}
+
+/* Return value:
+ *  0 => inserted
+ *  1 => not inserted
+ * -1 => error
+ */
+int __insert_fc(struct field_t *f, struct gingko_su *gs)
+{
+    if (f->fld.id >= gs->conf.fc_size) {
+        /* disable fc */
+        return -1;
+    }
+    gs->fc[f->fld.id].ft = f;
+
+    return 0;
+}
+
+void __fina_fc(struct gingko_su *gs)
+{
+    xfree(gs->fc);
+}
+
+struct field_t *find_field_by_id(struct gingko_su *gs, int id)
+{
+    struct field_t *f = NULL;
+
+    if (likely(gs->fc)) {
+        return gs->fc[id].ft;
+    }
+
+    if (gs->root) {
+        f = __find_field_t(gs->root, id);
+    } else {
+        /* FIXME: use df 0 */
+    }
+
+    return f;
+}
+
+struct field_t *find_field_by_name(struct gingko_su *gs, char *name)
+{
+    struct field_t *f = NULL;
+
+    if (gs->root) {
+        f = __find_field_t_by_name(gs->root, name);
+    } else {
+        /* FIXME: use df 0 */
+    }
+    
+    return f;
+}
+
+void __print_schema(void *arg, void *arg1)
 {
     struct field_t *f = (struct field_t *)arg;
 
@@ -197,29 +268,51 @@ void __print_schema(void *arg)
                 f->type, f->fld.id, f->fld.pid, f->fld.type);
 }
 
-void __free_schema(void *arg)
+void __free_schema(void *arg, void *arg1)
 {
     __free_field_t((struct field_t *)arg);
 }
 
-void __pre_trav_schemas(struct field_t *root, tfunc cb)
+void __build_fc(void *arg, void *arg1)
 {
-    int i;
-    
-    cb(root);
-    for (i = 0; i < root->cnr; i++) {
-        __pre_trav_schemas(root->cld[i], cb);
+    struct field_t *f = (struct field_t *)arg;
+    struct gingko_su *gs = (struct gingko_su *)arg1;
+
+    if (f->type == FIELD_TYPE_ROOT)
+        return;
+
+    if (gs->fc) {
+        switch (__insert_fc(f, gs)) {
+        case 0:
+            break;
+        case -1:
+        case 1:
+            /* free gs->fc now */
+            __fina_fc(gs);
+            gs->fc = NULL;
+            break;
+        }
     }
 }
 
-void __post_trav_schemas(struct field_t *root, tfunc cb)
+void __pre_trav_schemas(struct field_t *root, tfunc cb, void *arg1)
+{
+    int i;
+    
+    cb(root, arg1);
+    for (i = 0; i < root->cnr; i++) {
+        __pre_trav_schemas(root->cld[i], cb, arg1);
+    }
+}
+
+void __post_trav_schemas(struct field_t *root, tfunc cb, void *arg1)
 {
     int i;
 
     for (i = 0; i < root->cnr; i++) {
-        __post_trav_schemas(root->cld[i], cb);
+        __post_trav_schemas(root->cld[i], cb, arg1);
     }
-    cb(root);
+    cb(root, arg1);
 }
 
 static int __find_add_to_field_t(struct field_t *root, struct field f)
@@ -289,7 +382,10 @@ int verify_schema(struct gingko_su *gs, struct field schemas[], int schelen)
     }
 
     /* trav tree and print info */
-    __pre_trav_schemas(root, __print_schema);
+    __pre_trav_schemas(root, __print_schema, NULL);
+    /* FIXME: insert into the field cache */
+    __pre_trav_schemas(root, __build_fc, gs);
+    
     /* insert this subtree to root tree */
     err = __add_to_root(gs->root, root);
     if (err) {
@@ -302,7 +398,7 @@ out:
     return err;
 out_free:
     /* free the tree */
-    __post_trav_schemas(root, __free_schema);
+    __post_trav_schemas(root, __free_schema, NULL);
     goto out;
 }
 

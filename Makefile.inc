@@ -2,7 +2,7 @@
 # Copyright (c) 2009 Ma Can <ml.macana@gmail.com>
 #                           <macan@ncic.ac.cn>
 #
-# Time-stamp: <2014-01-14 15:42:07 macan>
+# Time-stamp: <2014-01-22 09:42:43 macan>
 #
 # This is the makefile for GINGKO project.
 #
@@ -39,7 +39,7 @@ __CORES__=$(GET_CORE)
 endif
 
 # Debuging the memory and locks
-XCFLAGS = -O2 -rdynamic -g -pg -fPIC
+XCFLAGS = -O2 -rdynamic -g -fPIC
 DEADCODESTRIP := -fdata-sections -ffunction-sections \
 				 -Wl,--gc-sections
 O3_OPT = -frename-registers -funroll-loops
@@ -70,7 +70,7 @@ endif
 LFLAGS += -lrt -ldl -lpthread
 
 # Region for depend files
-LIB_AR_SOURCE = lib.c crc32.c md5.c minilzo.c segv.c time.c
+LIB_AR_SOURCE = lib.c crc32.c md5.c minilzo.c segv.c time.c lz4.c xxhash.c
 SU_AR_SOURCE = su.c dfile.c page.c pagecache.c line.c column.c field.c
 INDEX_AR_SOURCE = dfile.c page.c 
 CODEC_AR_SOURCE = dict.c delta.c runlen.c
@@ -83,7 +83,7 @@ INC_H_SOURCE = atomic.h err.h gingko.h gingko_common.h gingko_const.h \
 				field.h su.h dfile.h page.h line.h index.h iapi.h
 SU_H_SOURCE = 
 INDEX_H_SOURCE = 
-LIB_H_SOURCE = lib.h minilzo.h
+LIB_H_SOURCE = lib.h minilzo.h lz4.h xxhash.h
 API_H_SOURCE = 
 CODEC_H_SOURCE = 
 

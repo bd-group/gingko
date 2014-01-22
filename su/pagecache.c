@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-19 00:17:08 macan>
+ * Time-stamp: <2014-01-22 10:58:01 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -165,7 +165,7 @@ static inline int __calc_pcrh_slot(char *suname, int dfid, u64 pgoff)
     char fstr[SU_NAME_LEN + 32];
     int len = sprintf(fstr, "%s%d%lx", suname, dfid, pgoff);
     
-    return RSHash(fstr, len) % gpc.pcsize;
+    return XXH32(fstr, len, 0) % gpc.pcsize;
 }
 
 static inline void __page_get(struct page *p)
@@ -235,8 +235,8 @@ struct page *__pcrh_lookup(char *suname, int dfid, u64 pgoff)
     rh = gpc.pcrh + idx;
     xlock_lock(&rh->lock);
     hlist_for_each_entry(p, pos, &rh->h, hlist) {
-        if (strncmp(p->suname, suname, SU_NAME_LEN) == 0 &&
-            p->dfid == dfid && p->pgoff == pgoff) {
+        if (p->dfid == dfid && p->pgoff == pgoff && 
+            strncmp(p->suname, suname, SU_NAME_LEN) == 0) {
             /* ok, found it */
             found = 1;
             __page_get(p);

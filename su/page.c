@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-19 01:00:55 macan>
+ * Time-stamp: <2014-01-22 10:58:10 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -64,7 +64,7 @@ struct page *__alloc_page(struct gingko_su *gs, int dfid, int flags)
     xrwlock_init(&p->rwlock);
     INIT_LIST_HEAD(&p->list);
     
-    /* TODO: init the page meta data */
+    /* FIXME: init the page meta data (consider multithreading) */
     if (flags & SU_PAGE_ALLOC_ADDL2P) {
         /* init df_header's l2p array */
         struct l2p_entry *le;
@@ -238,10 +238,9 @@ int page_write(struct page *p, struct line *line, long lid,
     p->coff += line->len;
 
     if (p->ph.status == SU_PH_CLEAN) {
-        gs->files[p->dfid].dfh->l2p.l2pa[
-            gs->files[p->dfid].dfh->l2p.ph.nr - 1].lid = lid;
-        gingko_debug(su, "Mark Page Dirty for lid %ld @ L2P %d\n", lid, 
-                     gs->files[p->dfid].dfh->l2p.ph.nr - 1);
+        gs->files[p->dfid].dfh->l2p.l2pa[p->pid].lid = lid;
+        gingko_debug(su, "Mark Page Dirty for lid %ld @ L2P %d\n", 
+                     lid, p->pid);
         p->ph.status = SU_PH_DIRTY;
     }
 
@@ -289,6 +288,34 @@ int __page_decomp_zlib(struct page *p, struct gingko_su *gs, void *zdata)
 {
     int err = 0;
 
+    return err;
+}
+
+int __page_decomp_lz4(struct page *p, struct gingko_su *gs, void *zdata)
+{
+    void *data = NULL;
+    int err = 0;
+
+    data = xmalloc(p->ph.orig_len);
+    if (!data) {
+        gingko_err(su, "xmalloc() original buffer failed, no memory.\n");
+        err = -ENOMEM;
+        goto out;
+    }
+
+    err = LZ4_decompress_safe(zdata, data, p->ph.zip_len, p->ph.orig_len);
+    if (err == p->ph.orig_len) {
+        err = 0;
+    } else {
+        gingko_err(su, "LZ4 decompress failed w/ %d\n", err);
+        xfree(data);
+        err = -EINTERNAL;
+        goto out;
+    }
+    p->data = data;
+    xfree(zdata);
+
+out:
     return err;
 }
 
@@ -396,6 +423,9 @@ struct page *page_load(struct gingko_su *gs, int dfid, u64 pgoff)
     case SU_PH_COMP_ZLIB:
         err = __page_decomp_zlib(p, gs, data);
         break;
+    case SU_PH_COMP_LZ4:
+        err = __page_decomp_lz4(p, gs, data);
+        break;
     default:
         gingko_err(su, "Invalid page header flag 0x%x\n", p->ph.flag);
         err = -EINVAL;
@@ -499,6 +529,26 @@ int __page_comp_zlib(struct page *p, struct gingko_su *gs, void *zdata)
     return err;
 }
 
+int __page_comp_lz4(struct page *p, struct gingko_su *gs, void *zdata)
+{
+    int zlen, err;
+
+    zlen = LZ4_compress(p->data, zdata, p->coff);
+    if (zlen <= 0) {
+        err = -EINTERNAL;
+        goto out;
+    }
+    if (zlen >= p->coff) {
+        gingko_err(su, "Page %p is impossible to compress.\n", p);
+        p->ph.flag = SU_PH_COMP_NONE;
+        goto out;
+    }
+    p->ph.zip_len = zlen;
+    
+out:
+    return err;
+}
+
 static inline char *__get_algo(struct page *p)
 {
     switch (p->ph.flag) {
@@ -588,6 +638,11 @@ out_unlock:
     return err;
 }
 
+static inline int ZIP_WORST_SIZE(int isize) 
+{
+    return LZ4_compressBound(isize);
+}
+
 /* Sync a page to storage device, do compress if need, do pre-write
  * operations, do post-write operations after successfully written.
  *
@@ -628,9 +683,11 @@ int page_sync(struct page *p, struct gingko_su *gs)
     }
     p->pi->lha = p->data + p->ph.lhoff;
     p->ph.orig_len = p->coff;
-    p->ph.crc32 = crc32c(0, p->data, p->coff);
+    /* To speedup performance, we change crc32 to xxhash */
+    //p->ph.crc32 = crc32c(0, p->data, p->coff);
+    p->ph.crc32 = XXH32(p->data, p->coff, 0);
 
-    zdata = xmalloc(p->coff);
+    zdata = xmalloc(ZIP_WORST_SIZE(p->coff));
     if (!zdata) {
         gingko_err(su, "xmalloc zdata buffer failed, no memory.\n");
         err = -ENOMEM;
@@ -651,12 +708,19 @@ int page_sync(struct page *p, struct gingko_su *gs)
     case SU_PH_COMP_ZLIB:
         err = __page_comp_zlib(p, gs, zdata);
         break;
+    case SU_PH_COMP_LZ4:
+        err = __page_comp_lz4(p, gs, zdata);
+        break;
     default:
         gingko_err(su, "Invalid page header flag 0x%x\n", p->ph.flag);
         err = -EINVAL;
         goto out_err;
     }
     /* do post-compress operations */
+    if (p->ph.flag == SU_PH_COMP_NONE) {
+        xfree(zdata);
+        zdata = NULL;
+    }
     gingko_info(su, "ZIP(%s) page data from %uB to %uB, CRC 0x%x LHoff "
                 "%uB lnr %d.\n",
                 __get_algo(p),
@@ -690,7 +754,7 @@ int page_sync(struct page *p, struct gingko_su *gs)
     }
     gs->files[p->dfid].dfh->l2p.l2pa[p->pid].pgoff = p->pgoff;
 
-    err = df_append_l2p(gs, &gs->files[p->dfid]);
+    err = df_append_l2p(gs, &gs->files[p->dfid], p->pid);
     if (err) {
         gingko_warning(su, "df_append_l2p() failed w/ %s(%d)\n",
                        gingko_strerror(err), err);
@@ -706,32 +770,6 @@ out:
 out_err:
     p->ph.status = SU_PH_DIRTY;
     goto out;
-}
-
-struct field_t *find_field(struct gingko_su *gs, int id)
-{
-    struct field_t *f = NULL;
-
-    if (gs->root) {
-        f = __find_field_t(gs->root, id);
-    } else {
-        /* FIXME: use df 0 */
-    }
-    
-    return f;
-}
-
-struct field_t *find_field_by_name(struct gingko_su *gs, char *name)
-{
-    struct field_t *f = NULL;
-
-    if (gs->root) {
-        f = __find_field_t_by_name(gs->root, name);
-    } else {
-        /* FIXME: use df 0 */
-    }
-    
-    return f;
 }
 
 int page_read(struct gingko_su *gs, struct page *p, long lid, 
@@ -762,7 +800,7 @@ int page_read(struct gingko_su *gs, struct page *p, long lid,
     }
     for (i = 0; i < fldnr; i++) {
         if (fields[i].id != FLD_MAX_PID) {
-            f = find_field(gs, fields[i].id);
+            f = find_field_by_id(gs, fields[i].id);
             if (!f) {
                 gingko_err(su, "Can not find field ID=%d\n", fields[i].id);
                 goto out;
@@ -839,7 +877,8 @@ int page_read(struct gingko_su *gs, struct page *p, long lid,
         gingko_debug(su, "Compare ID=%d ORIG_ID=%d\n", 
                      fields[i].id, fields[i].orig_id);
         if (fields[i].orig_id != fields[i].id) {
-            err = lineparse(&fields[i], f, find_field(gs, fields[i].orig_id));
+            err = lineparse(&fields[i], f, 
+                            find_field_by_id(gs, fields[i].orig_id));
             if (err) {
                 gingko_err(su, "lineparse() ID=%d Orig_ID=%d failed w/ %s(%d)\n",
                            fields[i].id, fields[i].orig_id,

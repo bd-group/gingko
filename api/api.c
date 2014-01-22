@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-18 22:46:25 macan>
+ * Time-stamp: <2014-01-21 16:33:21 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -267,6 +267,7 @@ struct gingko_suid *__alloc_su(struct gingko_manager *gm, int flag)
         INIT_HLIST_NODE(&gs->hlist);
         atomic_set(&gs->ref, 0);
         xlock_init(&gs->lock);
+        __init_fc(gs);
         /* init the ROOT of schema tree */
         {
             struct field_t *root;
@@ -274,6 +275,7 @@ struct gingko_suid *__alloc_su(struct gingko_manager *gm, int flag)
             root = alloc_field_t(FIELD_TYPE_ROOT);
             if (!root) {
                 gingko_err(su, "alloc root field_t failed.\n");
+                gid->state = GSU_FREE;
                 return NULL;
             }
             gs->root = root;
@@ -332,8 +334,12 @@ void __free_su(struct gingko_su *gs)
         gs->smfd = 0;
     }
 
+    if (gs->fc) {
+        __fina_fc(gs);
+    }
+    
     if (gs->root) {
-        __post_trav_schemas(gs->root, __free_schema);
+        __post_trav_schemas(gs->root, __free_schema, NULL);
     }
 
     xfree(gs->sm.name);

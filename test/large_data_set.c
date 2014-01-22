@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-19 00:48:50 macan>
+ * Time-stamp: <2014-01-22 09:20:33 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -122,7 +122,7 @@ int __do_write(struct field *schemas, int schlen, char *supath, int wnr)
     struct su_conf sc = {
         .page_size = SU_PAGE_SIZE,
         /* .page_size = 2 * 1024, */
-        .page_algo = SU_PH_COMP_LZO,
+        .page_algo = SU_PH_COMP_LZ4,
     };
     struct timeval begin, end;
     long wb;
@@ -157,7 +157,7 @@ out:
 
 int __read_dx_rz(int suidr, int lids[], int lnr, long *rb)
 {
-    struct field_g fields[8] = {
+    struct field_g fields[] = {
         {.id = 0, .flags = UNPACK_FNAME,},
         {.id = 8, .flags = UNPACK_FNAME,},
         {.id = 6, .flags = UNPACK_FNAME,},
@@ -165,6 +165,23 @@ int __read_dx_rz(int suidr, int lids[], int lnr, long *rb)
         {.id = FLD_MAX_PID, .name = "c_ydzhdlx"},
         {.id = 5, .flags = UNPACK_FNAME,},
         {.id = 15, .flags = UNPACK_FNAME,},
+/*
+        {.id = 16, .flags = UNPACK_FNAME,},
+        {.id = 17, .flags = UNPACK_FNAME,},
+        {.id = 18, .flags = UNPACK_FNAME,},
+        {.id = 21, },
+        {.id = 22, },
+        {.id = 23, },
+        {.id = 24, },
+        {.id = 25, },
+        {.id = 26, },
+        {.id = 27, },
+        {.id = 37, },
+        {.id = 38, },
+        {.id = 39, },
+        {.id = 40, },
+        {.id = 41, },
+*/
         {.id = 42},
     };
     int i, j, err = 0;
@@ -173,12 +190,13 @@ int __read_dx_rz(int suidr, int lids[], int lnr, long *rb)
     for (i = 0; i < lnr; i++) {
         char str[256];
         
-        err = su_get(suidr, lids[i], fields, 8);
+        err = su_get(suidr, lids[i], fields, 
+                     sizeof(fields) / sizeof(struct field_g));
         if (err) {
             printf("su_get() failed w/ %d\n", err);
             goto out;
         }
-        for (j = 0; j < 8; j++) {
+        for (j = 0; j < sizeof(fields) / sizeof(struct field_g); j++) {
             *rb += fields[j].dlen;
             if (fields[j].type == GINGKO_STRING) {
 #if 0
@@ -254,7 +272,8 @@ int __do_read(char *supath, int rnr)
         lids[i] = i;
     }
     
-    gingko_su_tracing_flags = GINGKO_ERR | GINGKO_WARN | GINGKO_INFO | GINGKO_DEBUG;
+    //gingko_su_tracing_flags = GINGKO_ERR | GINGKO_WARN | GINGKO_INFO | GINGKO_DEBUG;
+    gingko_su_tracing_flags = GINGKO_ERR | GINGKO_WARN | GINGKO_INFO;
     suidr = su_open("./first_su", SU_OPEN_RDONLY, NULL);
     gingko_su_tracing_flags = GINGKO_ERR | GINGKO_WARN;
     if (suidr < 0) {

@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-16 18:57:59 macan>
+ * Time-stamp: <2014-01-21 17:07:34 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -180,6 +180,12 @@ struct field_g
     char *name;                 /* query can by on NAME */
     void *content;
     int dlen;
+};
+
+/* for field cache use */
+struct field_c
+{
+    struct field_t *ft;
 };
 
 #endif

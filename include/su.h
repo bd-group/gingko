@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2013-12-24 17:40:36 macan>
+ * Time-stamp: <2014-01-21 17:03:09 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,8 +52,10 @@ struct su_conf
 {
 #define SU_PAGE_SIZE                    (128 * 1024)
 #define SU_PAGE_SIZE_MAX                (64 * 1024 * 1024)
+#define SU_FC_SIZE                      (256)
     int page_size;
     int page_algo;
+    int fc_size;
 };
 
 struct gingko_su
@@ -72,6 +74,7 @@ struct gingko_su
 
     /* schema tree from all dfiles */
     struct field_t *root;
+    struct field_c *fc;
     
     /* region for files' fd */
     xlock_t lock;               /* lock to protect fd update */
