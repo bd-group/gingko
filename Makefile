@@ -2,7 +2,7 @@
 # Copyright (c) 2009 Ma Can <ml.macana@gmail.com>
 #                           <macan@ncic.ac.cn>
 #
-# Time-stamp: <2013-11-11 17:17:28 macan>
+# Time-stamp: <2014-01-23 16:29:25 macan>
 #
 # This is the makefile for GINGKO project.
 #
@@ -42,7 +42,7 @@ $(API_LIB) : $(api_depend_files)
 $(TARGET) : lib
 	@$(CC) -shared -Wl,-soname,libgk.so -o $(LIB_PATH)/libgk.so $(su_o_depend_files) \
 		$(index_o_depend_files) $(lib_o_depend_files) $(api_o_depend_files) \
-		$(codec_o_depend_files) -lc -lrt -lpthread
+		$(codec_o_depend_files) $(LFLAGS)
 	@$(ECHO) -e " " Target is ready @ $(TARGET)
 
 clean :
@@ -60,7 +60,13 @@ help :
 	@$(ECHO) "                     otherwise, we can find the jemalloc lib path."
 	@$(ECHO) ""
 
-lib : $(GINGKO_LIB) $(SU_LIB) $(INDEX_LIB) $(CODEC_LIB) $(API_LIB)
+$(JEMALLOC_RULE) :
+	@$(ECHO) $(JEMALLOC_RULE)
+	@$(ECHO) -e " " CD"\t" $(DEPS)
+	@$(ECHO) -e " " MK"\t" $@
+	@$(MAKE) --no-print-directory -C $(DEPS) -e "HOME_PATH=$(HOME_PATH)" $(JEMALLOC_TARGET)
+
+lib : $(JEMALLOC_RULE) $(GINGKO_LIB) $(SU_LIB) $(INDEX_LIB) $(CODEC_LIB) $(API_LIB)
 	@$(ECHO) -e " " Lib is ready.
 
 test : $(TARGET)

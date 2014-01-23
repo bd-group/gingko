@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-21 16:33:21 macan>
+ * Time-stamp: <2014-01-23 16:56:51 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -455,6 +455,12 @@ int su_open(char *supath, int mode, void *arg)
 
     /* Step 3: read the su.meta file */
     gs->path = strdup(supath);
+    if (unlikely(!gs->path)) {
+        gingko_err(api, "allocate supath failed, no memory.\n");
+        err = -ENOMEM;
+        goto out_free;
+    }
+
     err = su_read_meta(gs);
     if (err) {
         goto out_free;
@@ -836,8 +842,16 @@ void su_free_field_2pack(struct field_2pack **fld, int fldnr)
     int i;
 
     for (i = 0; i < fldnr; i++) {
-        if (fld[i]->type == GINGKO_STRING) {
+        switch (fld[i]->type) {
+        case GINGKO_STRING:
+        case GINGKO_BYTES:
             xfree(fld[i]->data);
+            break;
+        case GINGKO_ARRAY:
+        case GINGKO_STRUCT:
+        case GINGKO_MAP:
+            su_free_field_2pack(fld[i]->clds, fld[i]->cidnr);
+            break;
         }
         xfree(fld[i]);
     }
@@ -856,7 +870,7 @@ int su_linepack(struct line *line, struct field_2pack *flds[], int l1fldnr)
 
     memset(line, 0, sizeof(*line));
 
-    x = xzalloc((l1fldnr + 1) * sizeof(struct lineheader));
+    x = xmalloc((l1fldnr + 1) * sizeof(struct lineheader));
     if (!x) {
         gingko_err(api, "xzalloc() %d linehader failed, no memory.\n",
                    l1fldnr);

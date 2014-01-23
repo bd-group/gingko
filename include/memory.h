@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-16 13:43:51 macan>
+ * Time-stamp: <2014-01-23 15:58:40 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -111,18 +111,18 @@ static inline void *xrealloc(void *ptr, size_t size)
 static inline void *xzalloc(size_t size)
 {
 #if 1
-    void *m = JEMALLOC_P(malloc)(size);
+    void *m = malloc(size);
     if (likely(m))
         memset(m, 0, size);
 #else
-    void *m = JEMALLOC_P(calloc)(size, 1);
+    void *m = calloc(size, 1)
 #endif
     return m;
 }
 
-#define xmalloc JEMALLOC_P(malloc)
-#define xfree JEMALLOC_P(free)
-#define xrealloc JEMALLOC_P(realloc)
+#define xmalloc malloc
+#define xfree free
+#define xrealloc realloc
 
 #else  /* default glibc memory allocator */
 static inline void *xzalloc(size_t size)

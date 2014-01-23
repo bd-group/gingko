@@ -2,7 +2,7 @@
 # Copyright (c) 2009 Ma Can <ml.macana@gmail.com>
 #                           <macan@ncic.ac.cn>
 #
-# Time-stamp: <2014-01-22 09:42:43 macan>
+# Time-stamp: <2014-01-23 16:57:08 macan>
 #
 # This is the makefile for GINGKO project.
 #
@@ -23,6 +23,7 @@ INDEX = $(HOME_PATH)/index
 SU = $(HOME_PATH)/su
 CODEC = $(HOME_PATH)/codec
 TEST = $(HOME_PATH)/test
+DEPS = $(HOME_PATH)/deps
 
 ifdef USE_GIT_TAG
 GIT_SHA = `$(GIT) rev-parse HEAD`
@@ -39,7 +40,7 @@ __CORES__=$(GET_CORE)
 endif
 
 # Debuging the memory and locks
-XCFLAGS = -O2 -rdynamic -g -fPIC
+XCFLAGS = -O3 -rdynamic -g -fPIC
 DEADCODESTRIP := -fdata-sections -ffunction-sections \
 				 -Wl,--gc-sections
 O3_OPT = -frename-registers -funroll-loops
@@ -55,19 +56,21 @@ CFLAGS += -Wall -DCDATE="\"$(COMPILE_DATE)\"" -DGIT_SHA="\"$(GIT_SHA)\""\
 ifndef JEMALLOC_HOME
 ifeq ($(JEMALLOC),)
 else
-$(info USE JEMALLOC malloc function @ $(JEMALLOC).)
-export JEMALLOC_HOME=$(JEMALLOC)
-$(info ========================================================)
+
 endif
 endif
 
-ifeq ($(JEMALLOC_HOME),)
-else
+ifeq ($(USE_JEMALLOC),yes)
+export JEMALLOC_HOME=$(HOME_PATH)/deps/jemalloc/
+#$(info USE JEMALLOC malloc function @ $(JEMALLOC_HOME).)
+#$(info ========================================================)
 CFLAGS += -DUSE_JEMALLOC=1 -I$(JEMALLOC_HOME)/include
-LFLAGS += -L$(JEMALLOC_HOME)/lib -ljemalloc
+LFLAGS += -L$(JEMALLOC_HOME)/lib -Wl,-rpath,${JEMALLOC_HOME}/lib -ljemalloc
+JEMALLOC_TARGET += jemalloc
+JEMALLOC_RULE += $(DEPS)/$(JEMALLOC_TARGET)/lib/libjemalloc.a
 endif
 
-LFLAGS += -lrt -ldl -lpthread
+LFLAGS += -lpthread
 
 # Region for depend files
 LIB_AR_SOURCE = lib.c crc32.c md5.c minilzo.c segv.c time.c lz4.c xxhash.c

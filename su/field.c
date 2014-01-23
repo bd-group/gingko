@@ -3,7 +3,7 @@
  *                           <macan@ncic.ac.cn>
  *
  * Armed with EMACS.
- * Time-stamp: <2014-01-21 17:13:15 macan>
+ * Time-stamp: <2014-01-22 13:39:22 macan>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -420,14 +420,12 @@ int build_lineheaders(struct gingko_su *gs, struct line *line, long lid,
         /* check if the 0th offset is ZERO. if not, do offset shift left */
         u64 zoff = 0;
         
+        if (l1fld[i] > 0)
+            zoff = line->lh[1].offset;
         for (j = 0; j < l1fld[i]; j++) {
             /* NOTE-XXX: to support user line reusing, we should automatically
              * dec the offset */
-            if (j == 0)
-                zoff = line->lh[j + 1].offset;
-            if (zoff > 0)
-                line->lh[j + 1].offset -= zoff;
-            line->lh[j + 1].offset += coff;
+            line->lh[j + 1].offset += (coff - zoff);
         }
     }
 
@@ -485,9 +483,9 @@ out:
     return err;
 }
 
-static int __get_headlen(int dlen)
+static inline int __get_headlen(int dlen)
 {
-    if (dlen < 0) {
+    if (unlikely(dlen < 0)) {
         gingko_err(su, "Negative data length %d", dlen);
         GINGKO_BUGON("Invalid data length.");
     } else if (dlen < SU_LEN_L1B_MAX) {
